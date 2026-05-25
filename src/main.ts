@@ -1,7 +1,7 @@
 import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 
-type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead';
-type GameState = 'ready' | 'running' | 'burned';
+type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead' | 'prize';
+type GameState = 'ready' | 'running' | 'burned' | 'won';
 type FontWeight = 'normal' | 'bold' | '400' | '500' | '600' | '700' | '800' | '900';
 type LayoutInfo = {
   scale: number;
@@ -24,6 +24,8 @@ const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
+const VICTORY_DELAY_MS = 1500;
+const PRIZE_INDEX = MULTIPLIERS.length - 1;
 
 type PadView = {
   root: Container;
@@ -189,8 +191,8 @@ function drawVent(parent: Container, x: number, y: number): void {
 
 function drawPad(parent: Container, label: string, state: PadState): void {
   parent.removeChildren();
-  const color = state === 'active' || state === 'passed' ? 0x25b94a : state === 'dead' ? 0xf3c62d : state === 'burned' ? 0xd12f68 : 0x596596;
-  const ring = state === 'active' || state === 'passed' ? 0x38ef55 : state === 'dead' ? 0xffdf44 : state === 'burned' ? 0xff386f : 0x7480c4;
+  const color = state === 'active' || state === 'passed' ? 0x25b94a : state === 'dead' || state === 'prize' ? 0xf3c62d : state === 'burned' ? 0xd12f68 : 0x596596;
+  const ring = state === 'active' || state === 'passed' ? 0x38ef55 : state === 'dead' || state === 'prize' ? 0xffdf44 : state === 'burned' ? 0xff386f : 0x7480c4;
 
   const g = new Graphics();
   g.circle(0, 11, 98).fill({ color: 0x1d243e, alpha: 0.45 });
@@ -207,6 +209,16 @@ function drawPad(parent: Container, label: string, state: PadState): void {
     skull.circle(14, -18, 16).fill(0xb9811a);
     skull.moveTo(12, 10).lineTo(21, 19).moveTo(21, 10).lineTo(12, 19).stroke({ width: 4, color: 0x8b661d });
     parent.addChild(skull);
+    return;
+  }
+
+  if (state === 'prize') {
+    const egg = new Graphics();
+    egg.ellipse(0, -8, 35, 47).fill(0xfff5c5).stroke({ width: 5, color: 0xf2b82c });
+    egg.ellipse(-10, -25, 11, 17).fill({ color: 0xffffff, alpha: 0.72 });
+    egg.circle(16, 12, 8).fill({ color: 0xffd85c, alpha: 0.8 });
+    egg.circle(-18, 6, 7).fill({ color: 0xffd85c, alpha: 0.65 });
+    parent.addChild(egg);
     return;
   }
 
@@ -331,6 +343,12 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   }
 }
 
+function drawVictoryBanner(root: Container, viewWidth: number): void {
+  const x = viewWidth / 2;
+  panel(root, x - 190, 180, 380, 94, 20, 0xffc21b, 0x9f7412, 0.98);
+  addText(root, 'ПОБЕДА!', x, 226, 48, 0x111829, 0.5, 0.5, '900');
+}
+
 async function boot() {
   const app = new Application();
   await app.init({
@@ -355,6 +373,8 @@ async function boot() {
   let targetX = chickenX;
   let moveProgress = 1;
   let burnedAt = 0;
+  let wonAt = 0;
+  let landingResolved = true;
   let flame: Container | undefined;
   let pads: PadView[] = [];
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
@@ -407,7 +427,8 @@ async function boot() {
 
     for (let i = 0; i < MULTIPLIERS.length; i++) {
       let state: PadState = 'idle';
-      if (gameState === 'burned' && i === activeIndex) state = 'burned';
+      if (gameState === 'won' && i === PRIZE_INDEX) state = 'prize';
+      else if (gameState === 'burned' && i === activeIndex) state = 'burned';
       else if (i < activeIndex) state = 'passed';
       else if (i === activeIndex) state = 'active';
       if (gameState === 'burned' && i === 0) state = 'dead';
@@ -429,11 +450,12 @@ async function boot() {
     }
 
     drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth);
+    if (gameState === 'won') drawVictoryBanner(uiLayer, layoutInfo.viewWidth);
     updateCameraTarget();
     applyCamera();
   }
 
-  function reviveAtStart() {
+  function resetAtStart() {
     gameState = 'ready';
     activeIndex = -1;
     cashout = '0';
@@ -442,9 +464,34 @@ async function boot() {
     targetX = chickenX;
     moveProgress = 1;
     burnedAt = 0;
+    wonAt = 0;
+    landingResolved = true;
     chicken.rotation = 0;
     targetCameraX = 0;
     render();
+  }
+
+  function roastChance(index: number) {
+    return Math.min(0.002 + index * 0.0015, 0.018);
+  }
+
+  function resolveLanding() {
+    if (landingResolved || gameState !== 'running') return;
+    landingResolved = true;
+
+    if (activeIndex >= PRIZE_INDEX) {
+      gameState = 'won';
+      cashout = '5.25';
+      wonAt = performance.now();
+      render();
+      return;
+    }
+
+    if (activeIndex > 0 && Math.random() < roastChance(activeIndex)) {
+      gameState = 'burned';
+      burnedAt = performance.now();
+      render();
+    }
   }
 
   function startRun() {
@@ -457,6 +504,8 @@ async function boot() {
     targetX = chickenX;
     moveProgress = 1;
     burnedAt = 0;
+    wonAt = 0;
+    landingResolved = true;
     updateCameraTarget();
     render();
   }
@@ -467,16 +516,14 @@ async function boot() {
       return;
     }
 
-    if (gameState === 'burned') return;
+    if (gameState === 'burned' || gameState === 'won' || moveProgress < 1) return;
+    if (activeIndex >= PRIZE_INDEX) return;
 
     activeIndex += 1;
-    cashout = activeIndex > 1 ? '3.51' : '3.09';
+    cashout = (3.09 + activeIndex * 0.21).toFixed(2);
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
     moveProgress = 0;
-    if (activeIndex >= 2) {
-      gameState = 'burned';
-      burnedAt = performance.now();
-    }
+    landingResolved = false;
     render();
   }
 
@@ -495,7 +542,10 @@ async function boot() {
       chickenY = RUN_CHICKEN_Y - Math.sin(moveProgress * Math.PI) * 72;
       chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.08;
       chicken.position.set(chickenX, chickenY);
-      if (moveProgress === 1) chicken.rotation = 0;
+      if (moveProgress === 1) {
+        chicken.rotation = 0;
+        resolveLanding();
+      }
     } else if (gameState !== 'burned') {
       chicken.y = chickenY + Math.sin(t * 4) * 3;
     }
@@ -515,7 +565,11 @@ async function boot() {
     }
 
     if (gameState === 'burned' && burnedAt > 0 && performance.now() - burnedAt >= REVIVE_DELAY_MS) {
-      reviveAtStart();
+      resetAtStart();
+    }
+
+    if (gameState === 'won' && wonAt > 0 && performance.now() - wonAt >= VICTORY_DELAY_MS) {
+      resetAtStart();
     }
   });
 

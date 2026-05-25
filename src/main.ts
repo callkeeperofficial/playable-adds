@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Rectangle, Text, TextStyle } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 
 type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead' | 'prize';
 type GameState = 'ready' | 'running' | 'burned' | 'won';
@@ -8,6 +8,20 @@ type LayoutInfo = {
   viewWidth: number;
 };
 type ButtonHandler = () => void;
+type FrameRect = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+type ChickenFrames = {
+  idle: Texture[];
+  jump: Texture[];
+};
+type ChickenActor = Container & {
+  frames?: ChickenFrames;
+  sprite?: Sprite;
+};
 
 const DESIGN_WIDTH = 2048;
 const DESIGN_HEIGHT = 1024;
@@ -26,12 +40,26 @@ const GAME_SETTINGS = {
 const PAD_STEP = 282;
 const FIRST_PAD_X = SIDE_W + 142;
 const PAD_Y = TOP_H + 317;
-const CHICKEN_GROUND_Y = PAD_Y + 172;
+const CHICKEN_GROUND_Y = FLOOR_Y - 68;
 const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
+const CHICKEN_SPRITE_URL = '/assets/chicken-sprite.png';
+const CHICKEN_SPRITE_SCALE = 0.56;
+const CHICKEN_IDLE_FRAMES: FrameRect[] = Array.from({ length: 8 }, (_, index) => ({
+  x: index * 192,
+  y: 736,
+  w: 192,
+  h: 219,
+}));
+const CHICKEN_JUMP_FRAMES: FrameRect[] = Array.from({ length: 4 }, (_, index) => ({
+  x: index * 384,
+  y: 0,
+  w: 384,
+  h: 500,
+}));
 const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
   const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
   return `${value.toFixed(2)}x`;
@@ -247,8 +275,41 @@ function makePad(label: string, x: number, state: PadState): PadView {
   return { root, state };
 }
 
-function makeChicken(): Container {
-  const c = new Container();
+function makeSpriteFrames(sheet: Texture, frames: FrameRect[]): Texture[] {
+  return frames.map((frame) => new Texture({
+    source: sheet.source,
+    frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+  }));
+}
+
+async function loadChickenFrames(): Promise<ChickenFrames | undefined> {
+  try {
+    const response = await fetch(CHICKEN_SPRITE_URL, { method: 'HEAD' });
+    if (!response.ok) return undefined;
+
+    const sheet = await Assets.load<Texture>(CHICKEN_SPRITE_URL);
+    return {
+      idle: makeSpriteFrames(sheet, CHICKEN_IDLE_FRAMES),
+      jump: makeSpriteFrames(sheet, CHICKEN_JUMP_FRAMES),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function makeChicken(frames?: ChickenFrames): ChickenActor {
+  const c = new Container() as ChickenActor;
+
+  if (frames) {
+    const sprite = new Sprite(frames.idle[0]);
+    sprite.anchor.set(0.5, 0.88);
+    sprite.scale.set(CHICKEN_SPRITE_SCALE);
+    c.frames = frames;
+    c.sprite = sprite;
+    c.addChild(sprite);
+    return c;
+  }
+
   const body = new Graphics();
   body.ellipse(0, 0, 76, 50).fill(0xf4fbff).stroke({ width: 5, color: 0xdde8ec });
   body.ellipse(-58, -8, 42, 37).fill(0xf8fdff).stroke({ width: 5, color: 0xdde8ec });
@@ -266,6 +327,14 @@ function makeChicken(): Container {
   body.moveTo(-50, 96).lineTo(-13, 96).moveTo(6, 96).lineTo(45, 96).stroke({ width: 9, color: 0xe9a21a });
   c.addChild(body);
   return c;
+}
+
+function updateChickenFrame(chicken: ChickenActor, moving: boolean, time: number): void {
+  if (!chicken.sprite || !chicken.frames) return;
+
+  const frames = moving ? chicken.frames.jump : chicken.frames.idle;
+  const fps = moving ? 12 : 7;
+  chicken.sprite.texture = frames[Math.floor(time * fps) % frames.length];
 }
 
 function drawFlame(parent: Container, x: number, y: number, scale: number): Container {
@@ -477,7 +546,8 @@ async function boot() {
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
   let cameraX = 0;
   let targetCameraX = 0;
-  const chicken = makeChicken();
+  const chickenFrames = await loadChickenFrames();
+  const chicken = makeChicken(chickenFrames);
 
   function clampCamera(value: number) {
     return Math.max(0, Math.min(value, Math.max(0, LEVEL_WIDTH - layoutInfo.viewWidth)));
@@ -554,6 +624,7 @@ async function boot() {
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
+    updateChickenFrame(chicken, moveProgress < 1, performance.now() / 1000);
     worldLayer.addChild(chicken);
 
     if (gameState === 'burned') {
@@ -652,12 +723,14 @@ async function boot() {
       chickenY = RUN_CHICKEN_Y - Math.sin(moveProgress * Math.PI) * 72;
       chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.08;
       chicken.position.set(chickenX, chickenY);
+      updateChickenFrame(chicken, true, t);
       if (moveProgress === 1) {
         chicken.rotation = 0;
         resolveLanding();
       }
     } else if (gameState !== 'burned') {
       chicken.y = chickenY + Math.sin(t * 4) * 3;
+      updateChickenFrame(chicken, false, t);
     }
 
     updateCameraTarget();

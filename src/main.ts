@@ -281,36 +281,119 @@ function drawFlame(parent: Container, x: number, y: number, scale: number): Cont
   return flame;
 }
 
-function drawControlCluster(parent: Container, availableWidth: number): void {
-  const cluster = new Container();
-  const baseWidth = 1351;
-  const scale = Math.min(1, Math.max(0.48, availableWidth / baseWidth));
-  cluster.position.set(71, 865);
-  cluster.scale.set(scale);
-  parent.addChild(cluster);
+function drawWagerSelector(parent: Container, x: number, y: number, w: number, h: number): void {
+  panel(parent, x, y, w, h, 10, 0x4d5269, 0x3b4057);
 
-  panel(cluster, 0, 0, 398, 76, 7, 0x4d5269, 0x3b4057);
-  panel(cluster, 15, 16, 68, 47, 5, 0x62687e, 0x62687e);
-  addText(cluster, 'MIN', 49, 40, 23, 0xffffff, 0.5, 0.5, '900');
-  addText(cluster, '3', 196, 40, 24, 0xffffff, 0.5, 0.5, '900');
-  panel(cluster, 306, 16, 79, 47, 5, 0x62687e, 0x62687e);
-  addText(cluster, 'MAX', 345, 40, 23, 0xffffff, 0.5, 0.5, '900');
+  const buttonW = Math.max(62, Math.min(112, w * 0.18));
+  const buttonH = Math.max(30, h - 16);
+  const buttonY = y + (h - buttonH) / 2;
+  const fontSize = buttonW < 82 ? 18 : 24;
 
-  const stakes = ['2 $', '3 $', '8 $', '20 $'];
+  panel(parent, x + 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
+  addText(parent, 'MIN', x + 16 + buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
+  addText(parent, '2', x + w / 2, y + h / 2, h < 52 ? 24 : 28, 0xc9ccd5, 0.5, 0.5, '900');
+
+  panel(parent, x + w - buttonW - 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
+  addText(parent, 'MAX', x + w - 16 - buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
+}
+
+function drawStakeButton(parent: Container, amount: string, x: number, y: number, w: number, h: number): void {
+  panel(parent, x, y, w, h, 11, 0x52576e, 0x3b4057);
+  const coinR = Math.max(10, Math.min(17, h * 0.28));
+  const fontSize = w < 92 ? 19 : 24;
+  const amountOffset = amount.length > 1 ? coinR + 12 : coinR + 8;
+  addText(parent, amount, x + w / 2 - amountOffset / 2, y + h / 2, fontSize, 0xcfd2dc, 0.5, 0.5, '900');
+
+  const coin = new Graphics();
+  coin.circle(x + w / 2 + amountOffset / 2, y + h / 2, coinR).fill(0xcfd2dc);
+  parent.addChild(coin);
+  addText(parent, '$', x + w / 2 + amountOffset / 2, y + h / 2, Math.max(15, fontSize - 5), 0x52576e, 0.5, 0.5, '900');
+}
+
+function drawStakeRow(parent: Container, x: number, y: number, w: number, h: number): void {
+  const stakes = ['2', '3', '8', '20'];
+  const gap = Math.max(10, Math.min(28, w * 0.025));
+  const buttonW = (w - gap * 3) / 4;
   for (let i = 0; i < stakes.length; i++) {
-    panel(cluster, i * 101, 97, 82, 64, 8, 0x52576e, 0x3b4057);
-    addText(cluster, stakes[i], 41 + i * 101, 129, 24, 0xffffff, 0.5, 0.5, '900');
+    drawStakeButton(parent, stakes[i], x + i * (buttonW + gap), y, buttonW, h);
+  }
+}
+
+function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean): void {
+  const goColor = state === 'burned' ? 0x3b9657 : 0x39c85a;
+  const readyLabel = state === 'ready' ? 'Play' : 'GO';
+
+  if (!showCashout) {
+    panel(parent, x, y, w, h, 18, goColor, goColor);
+    addText(parent, readyLabel, x + w / 2, y + h / 2, Math.min(45, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+    return;
   }
 
-  addText(cluster, 'Difficulty', 432, 18, 26, 0xffffff, 0, 0.5, '700');
-  panel(cluster, 432, 95, 918, 61, 9, 0x4d5268, 0x383d54);
+  const actionW = (w - gap) / 2;
+  panel(parent, x, y, actionW, h, 18, 0xffc21b, 0xffc21b);
+  const cashFont = actionW < 260 ? 27 : 34;
+  addText(parent, 'CASH OUT', x + actionW / 2, y + h * 0.38, cashFont, 0x111829, 0.5, 0.5, '900');
+  addText(parent, `${cashout} USD`, x + actionW / 2, y + h * 0.66, Math.max(26, cashFont - 1), 0x111829, 0.5, 0.5, '900');
+
+  const goX = x + actionW + gap;
+  panel(parent, goX, y, actionW, h, 18, goColor, goColor);
+  addText(parent, 'GO', goX + actionW / 2, y + h / 2, Math.min(46, Math.max(36, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+}
+
+function drawDifficultyStrip(parent: Container, x: number, y: number, w: number): void {
+  addText(parent, 'Difficulty', x, y, 25, 0xffffff, 0, 0.5, '700');
+  panel(parent, x, y + 58, w, 56, 9, 0x4d5268, 0x383d54);
+
   const labels = ['Easy', 'Medium', 'Hard', 'Hardcore'];
+  const segmentW = w / labels.length;
+  panel(parent, x + 7, y + 65, segmentW - 14, 42, 9, 0x6b7085, 0x6b7085);
   for (let i = 0; i < labels.length; i++) {
-    if (i === 0) panel(cluster, 439, 102, 215, 48, 9, 0x6b7085, 0x6b7085);
-    addText(cluster, labels[i], 546 + i * 225, 126, 24, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+    addText(parent, labels[i], x + segmentW * i + segmentW / 2, y + 86, 22, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+  }
+}
+
+function drawMinimalControls(root: Container, state: GameState, cardX: number, cardY: number, cardWidth: number, cardHeight: number): void {
+  const inset = 18;
+  const actionY = cardY + 36;
+  const actionH = cardHeight - 72;
+  panel(root, cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, 18, state === 'burned' ? 0x3b9657 : 0x39c85a, 0x39c85a);
+  addText(root, state === 'ready' ? 'Play' : 'GO', cardX + cardWidth / 2, actionY + actionH / 2, 38, 0xffffff, 0.5, 0.5, '900');
+}
+
+function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number): void {
+  const padX = w < 720 ? 22 : 32;
+  const contentX = x + padX;
+  const contentW = w - padX * 2;
+  const selectorY = y + 24;
+  const stakeY = selectorY + 54;
+  const actionY = stakeY + 62;
+  const actionH = Math.max(56, y + h - actionY - 22);
+
+  drawWagerSelector(root, contentX, selectorY, contentW, 42);
+  drawStakeRow(root, contentX, stakeY, contentW, 44);
+  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430);
+}
+
+function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number): void {
+  const contentX = x + 28;
+  const contentY = y + 24;
+  const contentW = w - 56;
+  const actionsW = Math.max(470, Math.min(560, contentW * 0.32));
+  const actionsGap = 32;
+  const actionsX = contentX + contentW - actionsW;
+  const betW = 400;
+  const midX = contentX + betW + 34;
+  const midW = actionsX - midX - 34;
+
+  drawWagerSelector(root, contentX, contentY, betW, 68);
+  drawStakeRow(root, contentX, contentY + 96, betW, 58);
+
+  if (midW >= 480) {
+    drawDifficultyStrip(root, midX, contentY + 10, midW);
+    addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, 0xc3c6d1, 0.5, 0.5, '500');
   }
 
-  addText(cluster, 'Chance of collision', 1116, 18, 27, 0xc3c6d1, 0, 0.5, '500');
+  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready');
 }
 
 function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number): void {
@@ -318,43 +401,26 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
   root.addChild(bottom);
 
-  const margin = viewWidth < 900 ? 24 : 42;
-  const panelWidth = Math.max(0, viewWidth - margin * 2);
-  panel(root, margin, 838, panelWidth, 215, 25, 0x43485d, 0x61735f, 0.96);
+  const margin = Math.max(24, Math.min(58, viewWidth * 0.028));
+  const cardX = margin;
+  const cardWidth = Math.max(0, viewWidth - margin * 2);
+  const isWide = cardWidth >= 1320;
+  const cardY = isWide ? 814 : 782;
+  const cardHeight = isWide ? 198 : 232;
 
-  const buttonWidth = Math.min(viewWidth < 700 ? 220 : viewWidth < 900 ? 270 : 335, Math.max(190, panelWidth));
-  const buttonX = viewWidth - margin - buttonWidth;
-  const canFitCashout = state !== 'ready' && buttonX - margin >= 470;
-  const cashoutWidth = canFitCashout ? Math.min(247, Math.max(190, buttonX - margin - 32)) : 0;
-  const cashoutX = buttonX - 32 - cashoutWidth;
-  const controlsRight = canFitCashout ? cashoutX - 24 : buttonX - 24;
-  const controlsWidth = controlsRight - 71;
-  const showControls = controlsWidth >= 650;
+  panel(root, cardX, cardY, cardWidth, cardHeight, 26, 0x43485d, 0x61735f, 0.96);
 
-  if (showControls) drawControlCluster(root, controlsWidth);
-
-  if (state === 'ready') {
-    if (controlsWidth >= 1540) {
-      panel(root, buttonX - 190, 865, 157, 157, 13, 0x53586f, 0x3d4257);
-      const arrows = new Graphics();
-      const cx = buttonX - 112;
-      arrows.arc(cx, 945, 30, -0.7, 2.4).stroke({ width: 6, color: 0xffffff });
-      arrows.arc(cx, 945, 30, 2.45, 5.5).stroke({ width: 6, color: 0xffffff });
-      arrows.moveTo(cx - 27, 934).lineTo(cx - 35, 955).lineTo(cx - 14, 951).fill(0xffffff);
-      arrows.moveTo(cx + 27, 956).lineTo(cx + 36, 934).lineTo(cx + 14, 938).fill(0xffffff);
-      root.addChild(arrows);
-    }
-    panel(root, buttonX, 865, buttonWidth, 157, 15, 0x39c85a, 0x39c85a);
-    addText(root, 'Play', buttonX + buttonWidth / 2, 943, viewWidth < 760 ? 42 : 49, 0xffffff, 0.5, 0.5, '900');
-  } else {
-    if (canFitCashout) {
-      panel(root, cashoutX, 867, cashoutWidth, 158, 14, 0xffc21b, 0xffc21b);
-      addText(root, 'CASH OUT', cashoutX + cashoutWidth / 2, 930, cashoutWidth < 220 ? 29 : 35, 0x111829, 0.5, 0.5, '900');
-      addText(root, `${cashout} USD`, cashoutX + cashoutWidth / 2, 968, cashoutWidth < 220 ? 28 : 34, 0x111829, 0.5, 0.5, '900');
-    }
-    panel(root, buttonX, 867, buttonWidth, 158, 14, state === 'burned' ? 0x3b9657 : 0x39c85a, 0x39c85a);
-    addText(root, 'GO', buttonX + buttonWidth / 2, 946, 43, 0xffffff, 0.5, 0.5, '900');
+  if (cardWidth < 390) {
+    drawMinimalControls(root, state, cardX, cardY, cardWidth, cardHeight);
+    return;
   }
+
+  if (isWide) {
+    drawWideControls(root, state, cashout, cardX, cardY, cardWidth);
+    return;
+  }
+
+  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight);
 }
 
 function drawVictoryBanner(root: Container, viewWidth: number): void {
@@ -373,6 +439,8 @@ async function boot() {
     autoDensity: true,
   });
   document.body.appendChild(app.canvas);
+  app.canvas.style.width = '100vw';
+  app.canvas.style.height = '100vh';
 
   const worldLayer = new Container();
   const uiLayer = new Container();
@@ -411,6 +479,21 @@ async function boot() {
 
   function applyCamera() {
     worldLayer.x = -cameraX * layoutInfo.scale;
+  }
+
+  function viewportSize() {
+    const viewport = window.visualViewport;
+    return {
+      width: Math.max(1, Math.round(viewport?.width ?? window.innerWidth)),
+      height: Math.max(1, Math.round(viewport?.height ?? window.innerHeight)),
+    };
+  }
+
+  function resizeRendererToViewport() {
+    const { width, height } = viewportSize();
+    if (app.screen.width !== width || app.screen.height !== height) {
+      app.renderer.resize(width, height);
+    }
   }
 
   function layout() {
@@ -587,12 +670,29 @@ async function boot() {
     }
   });
 
-  layout();
-  render();
-  window.addEventListener('resize', () => {
+  let resizeFrame = 0;
+  function relayout() {
+    resizeRendererToViewport();
     layout();
     render();
-  });
+  }
+
+  function scheduleResize() {
+    if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      relayout();
+    });
+  }
+
+  const resizeObserver = new ResizeObserver(scheduleResize);
+  resizeObserver.observe(document.documentElement);
+  resizeObserver.observe(document.body);
+
+  window.addEventListener('resize', scheduleResize);
+  window.addEventListener('orientationchange', scheduleResize);
+  window.visualViewport?.addEventListener('resize', scheduleResize);
+  relayout();
 }
 
 boot();

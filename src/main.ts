@@ -15,7 +15,13 @@ const SIDE_W = 282;
 const STAGE_H = 724;
 const FLOOR_Y = TOP_H + STAGE_H - 52;
 const BOTTOM_Y = TOP_H + STAGE_H;
-const MULTIPLIERS = ['1.03x', '1.07x', '1.12x', '1.17x', '1.23x', '1.29x', '1.36x', '1.44x', '1.53x', '1.63x', '1.75x'];
+
+const GAME_SETTINGS = {
+  padCount: 11,
+  firstMultiplier: 1.03,
+  multiplierGrowth: 0.045,
+};
+
 const PAD_STEP = 282;
 const FIRST_PAD_X = SIDE_W + 142;
 const PAD_Y = TOP_H + 317;
@@ -25,6 +31,10 @@ const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
+const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
+  const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
+  return `${value.toFixed(2)}x`;
+});
 const PRIZE_INDEX = MULTIPLIERS.length - 1;
 const LEVEL_WIDTH = FIRST_PAD_X + PRIZE_INDEX * PAD_STEP + 360;
 

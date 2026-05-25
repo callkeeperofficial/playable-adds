@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
+import { Application, Container, Graphics, Rectangle, Text, TextStyle } from 'pixi.js';
 
 type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead' | 'prize';
 type GameState = 'ready' | 'running' | 'burned' | 'won';
@@ -7,6 +7,7 @@ type LayoutInfo = {
   scale: number;
   viewWidth: number;
 };
+type ButtonHandler = () => void;
 
 const DESIGN_WIDTH = 2048;
 const DESIGN_HEIGHT = 1024;
@@ -25,7 +26,7 @@ const GAME_SETTINGS = {
 const PAD_STEP = 282;
 const FIRST_PAD_X = SIDE_W + 142;
 const PAD_Y = TOP_H + 317;
-const CHICKEN_GROUND_Y = FLOOR_Y - 5;
+const CHICKEN_GROUND_Y = PAD_Y + 172;
 const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
@@ -319,12 +320,26 @@ function drawStakeRow(parent: Container, x: number, y: number, w: number, h: num
   }
 }
 
-function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean): void {
+function bindButton(button: Graphics, x: number, y: number, w: number, h: number, onClick: ButtonHandler): void {
+  button.eventMode = 'static';
+  button.cursor = 'pointer';
+  button.hitArea = new Rectangle(x, y, w, h);
+  button.on('pointertap', onClick);
+}
+
+function drawGoButton(parent: Container, label: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler): void {
+  const button = panel(parent, x, y, w, h, 18, 0x39c85a, 0x39c85a);
+  bindButton(button, x, y, w, h, onGo);
+  addText(parent, label, x + w / 2, y + h / 2, Math.min(46, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+}
+
+function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean, onGo: ButtonHandler): void {
   const goColor = state === 'burned' ? 0x3b9657 : 0x39c85a;
   const readyLabel = state === 'ready' ? 'Play' : 'GO';
 
   if (!showCashout) {
-    panel(parent, x, y, w, h, 18, goColor, goColor);
+    const button = panel(parent, x, y, w, h, 18, goColor, goColor);
+    bindButton(button, x, y, w, h, onGo);
     addText(parent, readyLabel, x + w / 2, y + h / 2, Math.min(45, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
     return;
   }
@@ -336,7 +351,8 @@ function drawActions(parent: Container, state: GameState, cashout: string, x: nu
   addText(parent, `${cashout} USD`, x + actionW / 2, y + h * 0.66, Math.max(26, cashFont - 1), 0x111829, 0.5, 0.5, '900');
 
   const goX = x + actionW + gap;
-  panel(parent, goX, y, actionW, h, 18, goColor, goColor);
+  const goButton = panel(parent, goX, y, actionW, h, 18, goColor, goColor);
+  bindButton(goButton, goX, y, actionW, h, onGo);
   addText(parent, 'GO', goX + actionW / 2, y + h / 2, Math.min(46, Math.max(36, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
 }
 
@@ -352,15 +368,14 @@ function drawDifficultyStrip(parent: Container, x: number, y: number, w: number)
   }
 }
 
-function drawMinimalControls(root: Container, state: GameState, cardX: number, cardY: number, cardWidth: number, cardHeight: number): void {
+function drawMinimalControls(root: Container, state: GameState, cardX: number, cardY: number, cardWidth: number, cardHeight: number, onGo: ButtonHandler): void {
   const inset = 18;
   const actionY = cardY + 36;
   const actionH = cardHeight - 72;
-  panel(root, cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, 18, state === 'burned' ? 0x3b9657 : 0x39c85a, 0x39c85a);
-  addText(root, state === 'ready' ? 'Play' : 'GO', cardX + cardWidth / 2, actionY + actionH / 2, 38, 0xffffff, 0.5, 0.5, '900');
+  drawGoButton(root, state === 'ready' ? 'Play' : 'GO', cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, onGo);
 }
 
-function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number): void {
+function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler): void {
   const padX = w < 720 ? 22 : 32;
   const contentX = x + padX;
   const contentW = w - padX * 2;
@@ -371,10 +386,10 @@ function drawStackedControls(root: Container, state: GameState, cashout: string,
 
   drawWagerSelector(root, contentX, selectorY, contentW, 42);
   drawStakeRow(root, contentX, stakeY, contentW, 44);
-  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430);
+  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430, onGo);
 }
 
-function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number): void {
+function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, onGo: ButtonHandler): void {
   const contentX = x + 28;
   const contentY = y + 24;
   const contentW = w - 56;
@@ -393,10 +408,10 @@ function drawWideControls(root: Container, state: GameState, cashout: string, x:
     addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, 0xc3c6d1, 0.5, 0.5, '500');
   }
 
-  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready');
+  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready', onGo);
 }
 
-function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number): void {
+function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number, onGo: ButtonHandler): void {
   const bottom = new Graphics();
   bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
   root.addChild(bottom);
@@ -411,16 +426,16 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   panel(root, cardX, cardY, cardWidth, cardHeight, 26, 0x43485d, 0x61735f, 0.96);
 
   if (cardWidth < 390) {
-    drawMinimalControls(root, state, cardX, cardY, cardWidth, cardHeight);
+    drawMinimalControls(root, state, cardX, cardY, cardWidth, cardHeight, onGo);
     return;
   }
 
   if (isWide) {
-    drawWideControls(root, state, cashout, cardX, cardY, cardWidth);
+    drawWideControls(root, state, cashout, cardX, cardY, cardWidth, onGo);
     return;
   }
 
-  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight);
+  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight, onGo);
 }
 
 function drawVictoryBanner(root: Container, viewWidth: number): void {
@@ -546,7 +561,7 @@ async function boot() {
       flame = drawFlame(worldLayer, x, FLOOR_Y - 85, 1.65);
     }
 
-    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth);
+    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth, advance);
     if (gameState === 'won') drawVictoryBanner(uiLayer, layoutInfo.viewWidth);
     updateCameraTarget();
     applyCamera();
@@ -624,9 +639,7 @@ async function boot() {
     render();
   }
 
-  app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
-  app.stage.on('pointertap', advance);
 
   app.ticker.add((ticker) => {
     const t = performance.now() / 1000;

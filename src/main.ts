@@ -5,10 +5,10 @@ type GameState = 'ready' | 'running' | 'burned';
 type FontWeight = 'normal' | 'bold' | '400' | '500' | '600' | '700' | '800' | '900';
 
 const DESIGN_WIDTH = 2048;
-const DESIGN_HEIGHT = 1152;
+const DESIGN_HEIGHT = 1024;
 const TOP_H = 48;
 const SIDE_W = 282;
-const STAGE_H = 774;
+const STAGE_H = 724;
 const FLOOR_Y = TOP_H + STAGE_H - 52;
 const BOTTOM_Y = TOP_H + STAGE_H;
 const MULTIPLIERS = ['1.03x', '1.07x', '1.12x', '1.17x', '1.23x', '1.29x', '1.36x', '1.44x', '1.53x', '1.63x', '1.75x'];
@@ -291,6 +291,7 @@ async function boot() {
     background: '#111421',
     antialias: true,
     resolution: Math.min(window.devicePixelRatio, 2),
+    autoDensity: true,
   });
   document.body.appendChild(app.canvas);
 
@@ -310,9 +311,8 @@ async function boot() {
   const chicken = makeChicken();
 
   function layout() {
-    const scale = Math.min(app.renderer.width / DESIGN_WIDTH, app.renderer.height / DESIGN_HEIGHT);
-    root.scale.set(scale);
-    root.position.set((app.renderer.width - DESIGN_WIDTH * scale) / 2, (app.renderer.height - DESIGN_HEIGHT * scale) / 2);
+    root.scale.set(app.renderer.width / DESIGN_WIDTH, app.renderer.height / DESIGN_HEIGHT);
+    root.position.set(0, 0);
   }
 
   function render() {

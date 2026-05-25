@@ -26,6 +26,7 @@ const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
 const PRIZE_INDEX = MULTIPLIERS.length - 1;
+const LEVEL_WIDTH = FIRST_PAD_X + PRIZE_INDEX * PAD_STEP + 360;
 
 type PadView = {
   root: Container;
@@ -145,7 +146,7 @@ function drawLivePanel(root: Container): void {
 
 function drawStage(root: Container): void {
   const stage = new Graphics();
-  stage.rect(SIDE_W, TOP_H, DESIGN_WIDTH - SIDE_W, STAGE_H).fill(0x444c6d);
+  stage.rect(SIDE_W, TOP_H, LEVEL_WIDTH - SIDE_W, STAGE_H).fill(0x444c6d);
   root.addChild(stage);
 
   const blocks = new Graphics();
@@ -153,13 +154,16 @@ function drawStage(root: Container): void {
     [145, 157], [322, 104], [603, 154], [711, 202], [994, 104], [1168, 523], [1455, 202],
     [1559, 103], [1735, 523], [1842, 154], [2027, 523], [37, 314], [321, 523], [887, 521],
   ];
-  for (const [x, y] of blockData) {
-    blocks.roundRect(x, TOP_H + y, 90, 55, 14).fill({ color: 0x303752, alpha: 0.68 });
+  for (let offset = 0; offset < LEVEL_WIDTH; offset += 1420) {
+    for (const [x, y] of blockData) {
+      const blockX = x + offset;
+      if (blockX < LEVEL_WIDTH) blocks.roundRect(blockX, TOP_H + y, 90, 55, 14).fill({ color: 0x303752, alpha: 0.68 });
+    }
   }
   root.addChild(blocks);
 
   const lines = new Graphics();
-  for (let x = SIDE_W + PAD_STEP; x < DESIGN_WIDTH; x += PAD_STEP) {
+  for (let x = SIDE_W + PAD_STEP; x < LEVEL_WIDTH; x += PAD_STEP) {
     for (let y = TOP_H + 18; y < FLOOR_Y - 16; y += 64) {
       lines.roundRect(x - 4, y, 8, 32, 2).fill(0xa6afd5);
     }
@@ -167,13 +171,13 @@ function drawStage(root: Container): void {
   root.addChild(lines);
 
   const floor = new Graphics();
-  floor.rect(0, FLOOR_Y, DESIGN_WIDTH, 50).fill(0x34394d);
-  floor.rect(0, FLOOR_Y, DESIGN_WIDTH, 7).fill(0x1e2439);
-  for (let x = 0; x < DESIGN_WIDTH; x += 282) {
+  floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 50).fill(0x34394d);
+  floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 7).fill(0x1e2439);
+  for (let x = 0; x < LEVEL_WIDTH; x += 282) {
     floor.rect(x, FLOOR_Y + 8, 282, 42).fill((x / 282) % 2 ? 0x3a3e52 : 0x303548);
     floor.rect(x + 281, FLOOR_Y + 8, 1, 42).fill(0x242a3d);
   }
-  floor.rect(0, FLOOR_Y + 50, DESIGN_WIDTH, 9).fill(0x111523);
+  floor.rect(0, FLOOR_Y + 50, LEVEL_WIDTH, 9).fill(0x111523);
   root.addChild(floor);
 }
 
@@ -383,7 +387,7 @@ async function boot() {
   const chicken = makeChicken();
 
   function clampCamera(value: number) {
-    return Math.max(0, Math.min(value, Math.max(0, DESIGN_WIDTH - layoutInfo.viewWidth)));
+    return Math.max(0, Math.min(value, Math.max(0, LEVEL_WIDTH - layoutInfo.viewWidth)));
   }
 
   function updateCameraTarget() {

@@ -46,14 +46,14 @@ const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
-const CHICKEN_SPRITE_URL = '/assets/chicken-sprite.png';
+const CHICKEN_SPRITE_URL = `${import.meta.env.BASE_URL}assets/chicken-sprite.png`;
 const CHICKEN_SPRITE_SCALE = 0.74;
-const CHICKEN_IDLE_FRAMES: FrameRect[] = Array.from({ length: 8 }, (_, index) => ({
-  x: index * 192,
+const CHICKEN_IDLE_FRAMES: FrameRect[] = [{
+  x: 384,
   y: 736,
   w: 192,
   h: 219,
-}));
+}];
 const CHICKEN_JUMP_FRAMES: FrameRect[] = Array.from({ length: 4 }, (_, index) => ({
   x: index * 384,
   y: 0,
@@ -334,8 +334,15 @@ function updateChickenFrame(chicken: ChickenActor, moving: boolean, time: number
   if (!chicken.sprite || !chicken.frames) return;
 
   const frames = moving ? chicken.frames.jump : chicken.frames.idle;
-  const fps = moving ? 12 : 7;
-  chicken.sprite.texture = frames[Math.floor(time * fps) % frames.length];
+  const frameIndex = moving ? Math.floor(time * 12) % frames.length : 0;
+  const breath = moving ? 0 : Math.sin(time * 4.5) * 0.015;
+
+  chicken.sprite.texture = frames[frameIndex];
+  chicken.sprite.scale.set(
+    CHICKEN_SPRITE_SCALE * (1 + breath),
+    CHICKEN_SPRITE_SCALE * (1 - breath * 0.45),
+  );
+  chicken.sprite.y = moving ? 0 : Math.sin(time * 4.5) * -1.5;
 }
 
 function drawFlame(parent: Container, x: number, y: number, scale: number): Container {

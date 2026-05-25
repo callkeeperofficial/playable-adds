@@ -1,5 +1,4 @@
 node_modules/
-dist/*
-!dist/chicken-road-playable.tar.gz
+dist/
 .DS_Store
 npm-debug.log*

@@ -16,6 +16,10 @@ const PAD_STEP = 282;
 const FIRST_PAD_X = SIDE_W + 142;
 const PAD_Y = TOP_H + 317;
 const CHICKEN_GROUND_Y = FLOOR_Y - 5;
+const START_CHICKEN_X = 144;
+const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
+const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
+const REVIVE_DELAY_MS = 1200;
 
 type PadView = {
   root: Container;
@@ -302,10 +306,11 @@ async function boot() {
   let activeIndex = -1;
   let balance = '1 000 000';
   let cashout = '0';
-  let chickenX = 144;
-  let chickenY = CHICKEN_GROUND_Y - 12;
+  let chickenX = START_CHICKEN_X;
+  let chickenY = START_CHICKEN_Y;
   let targetX = chickenX;
   let moveProgress = 1;
+  let burnedAt = 0;
   let flame: Container | undefined;
   let pads: PadView[] = [];
   const chicken = makeChicken();
@@ -350,15 +355,29 @@ async function boot() {
     drawControls(root, gameState, balance, cashout);
   }
 
+  function reviveAtStart() {
+    gameState = 'ready';
+    activeIndex = -1;
+    cashout = '0';
+    chickenX = START_CHICKEN_X;
+    chickenY = START_CHICKEN_Y;
+    targetX = chickenX;
+    moveProgress = 1;
+    burnedAt = 0;
+    chicken.rotation = 0;
+    render();
+  }
+
   function startRun() {
     gameState = 'running';
     activeIndex = 0;
     balance = '999 997';
     cashout = '3.09';
     chickenX = FIRST_PAD_X;
-    chickenY = CHICKEN_GROUND_Y - 18;
+    chickenY = RUN_CHICKEN_Y;
     targetX = chickenX;
     moveProgress = 1;
+    burnedAt = 0;
     render();
   }
 
@@ -374,7 +393,10 @@ async function boot() {
     cashout = activeIndex > 1 ? '3.51' : '3.09';
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
     moveProgress = 0;
-    if (activeIndex >= 2) gameState = 'burned';
+    if (activeIndex >= 2) {
+      gameState = 'burned';
+      burnedAt = performance.now();
+    }
     render();
   }
 
@@ -390,7 +412,7 @@ async function boot() {
       const start = chickenX;
       const eased = 1 - Math.pow(1 - moveProgress, 3);
       chickenX = start + (targetX - start) * eased;
-      chickenY = CHICKEN_GROUND_Y - 18 - Math.sin(moveProgress * Math.PI) * 72;
+      chickenY = RUN_CHICKEN_Y - Math.sin(moveProgress * Math.PI) * 72;
       chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.08;
       chicken.position.set(chickenX, chickenY);
       if (moveProgress === 1) chicken.rotation = 0;
@@ -406,6 +428,10 @@ async function boot() {
     if (flame) {
       flame.y = FLOOR_Y - 85 + Math.sin(t * 7) * 7;
       flame.scale.set(1.65 + Math.sin(t * 8) * 0.06);
+    }
+
+    if (gameState === 'burned' && burnedAt > 0 && performance.now() - burnedAt >= REVIVE_DELAY_MS) {
+      reviveAtStart();
     }
   });
 

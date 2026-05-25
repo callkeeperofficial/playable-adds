@@ -3,13 +3,11 @@
 PixiJS + Vite + TypeScript playable prototype based on provided notes.
 
 ## Features
-- Reference-style Chicken Road scene with dark brick dungeon, glowing grills, logo, counters, controls, and roasted result state.
-- 10 visible grills, only forward movement.
+- The provided polished Chicken Road reference is used as the primary visual source.
+- Full reference composition with gameplay and roasted-result UI.
+- Tap/click interaction highlights the next grill.
 - Click/tap to jump to next grill.
-- Animated fire and glow effects on grills.
-- Roast chance increases with progress.
-- Hidden final prize after the final grill.
-- Win/lose state with Play Again.
+- Play Again area resets interaction progress.
 - Generated assets (placeholder quality) in `public/assets`.
 - HTML prototypes:
   - `chicken_playable.html`

@@ -255,6 +255,38 @@ function drawFlame(parent: Container, x: number, y: number, scale: number): Cont
   return flame;
 }
 
+function drawControlCluster(parent: Container, availableWidth: number): void {
+  const cluster = new Container();
+  const baseWidth = 1351;
+  const scale = Math.min(1, Math.max(0.48, availableWidth / baseWidth));
+  cluster.position.set(71, 865);
+  cluster.scale.set(scale);
+  parent.addChild(cluster);
+
+  panel(cluster, 0, 0, 398, 76, 7, 0x4d5269, 0x3b4057);
+  panel(cluster, 15, 16, 68, 47, 5, 0x62687e, 0x62687e);
+  addText(cluster, 'MIN', 49, 40, 23, 0xffffff, 0.5, 0.5, '900');
+  addText(cluster, '3', 196, 40, 24, 0xffffff, 0.5, 0.5, '900');
+  panel(cluster, 306, 16, 79, 47, 5, 0x62687e, 0x62687e);
+  addText(cluster, 'MAX', 345, 40, 23, 0xffffff, 0.5, 0.5, '900');
+
+  const stakes = ['2 $', '3 $', '8 $', '20 $'];
+  for (let i = 0; i < stakes.length; i++) {
+    panel(cluster, i * 101, 97, 82, 64, 8, 0x52576e, 0x3b4057);
+    addText(cluster, stakes[i], 41 + i * 101, 129, 24, 0xffffff, 0.5, 0.5, '900');
+  }
+
+  addText(cluster, 'Difficulty', 432, 18, 26, 0xffffff, 0, 0.5, '700');
+  panel(cluster, 432, 95, 918, 61, 9, 0x4d5268, 0x383d54);
+  const labels = ['Easy', 'Medium', 'Hard', 'Hardcore'];
+  for (let i = 0; i < labels.length; i++) {
+    if (i === 0) panel(cluster, 439, 102, 215, 48, 9, 0x6b7085, 0x6b7085);
+    addText(cluster, labels[i], 546 + i * 225, 126, 24, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+  }
+
+  addText(cluster, 'Chance of collision', 1116, 18, 27, 0xc3c6d1, 0, 0.5, '500');
+}
+
 function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number): void {
   const bottom = new Graphics();
   bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
@@ -264,44 +296,19 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   const panelWidth = Math.max(0, viewWidth - margin * 2);
   panel(root, margin, 838, panelWidth, 215, 25, 0x43485d, 0x61735f, 0.96);
 
-  const buttonWidth = Math.min(viewWidth < 900 ? 300 : 335, Math.max(220, panelWidth));
+  const buttonWidth = Math.min(viewWidth < 700 ? 220 : viewWidth < 900 ? 270 : 335, Math.max(190, panelWidth));
   const buttonX = viewWidth - margin - buttonWidth;
-  const showCashout = state !== 'ready' && viewWidth >= 760;
-  const cashoutWidth = showCashout ? Math.min(247, Math.max(190, buttonX - margin - 28)) : 0;
+  const canFitCashout = state !== 'ready' && buttonX - margin >= 470;
+  const cashoutWidth = canFitCashout ? Math.min(247, Math.max(190, buttonX - margin - 32)) : 0;
   const cashoutX = buttonX - 32 - cashoutWidth;
-  const controlsRight = showCashout ? cashoutX - 34 : buttonX - 34;
-  const showFullControls = controlsRight >= 1340;
-  const showCompactControls = !showFullControls && controlsRight >= 860;
+  const controlsRight = canFitCashout ? cashoutX - 24 : buttonX - 24;
+  const controlsWidth = controlsRight - 71;
+  const showControls = controlsWidth >= 650;
 
-  if (showFullControls || showCompactControls) {
-    panel(root, 71, 865, 398, 76, 7, 0x4d5269, 0x3b4057);
-    panel(root, 86, 881, 68, 47, 5, 0x62687e, 0x62687e);
-    addText(root, 'MIN', 120, 905, 23, 0xffffff, 0.5, 0.5, '900');
-    addText(root, '3', 267, 905, 24, 0xffffff, 0.5, 0.5, '900');
-    panel(root, 377, 881, 79, 47, 5, 0x62687e, 0x62687e);
-    addText(root, 'MAX', 416, 905, 23, 0xffffff, 0.5, 0.5, '900');
-
-    const stakes = ['2 $', '3 $', '8 $', '20 $'];
-    for (let i = 0; i < stakes.length; i++) {
-      panel(root, 71 + i * 101, 962, 82, 64, 8, 0x52576e, 0x3b4057);
-      addText(root, stakes[i], 112 + i * 101, 994, 24, 0xffffff, 0.5, 0.5, '900');
-    }
-
-    addText(root, 'Difficulty', 503, 883, 26, 0xffffff, 0, 0.5, '700');
-    const difficultyWidth = showFullControls ? 918 : Math.max(350, controlsRight - 504);
-    panel(root, 504, 960, difficultyWidth, 61, 9, 0x4d5268, 0x383d54);
-    const labels = showFullControls ? ['Easy', 'Medium', 'Hard', 'Hardcore'] : ['Easy', 'Medium'];
-    const segmentWidth = difficultyWidth / labels.length;
-    for (let i = 0; i < labels.length; i++) {
-      if (i === 0) panel(root, 511, 967, Math.max(135, segmentWidth - 14), 48, 9, 0x6b7085, 0x6b7085);
-      addText(root, labels[i], 504 + segmentWidth * i + segmentWidth / 2, 991, 24, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
-    }
-
-    if (showFullControls) addText(root, 'Chance of collision', 1188, 882, 27, 0xc3c6d1, 0, 0.5, '500');
-  }
+  if (showControls) drawControlCluster(root, controlsWidth);
 
   if (state === 'ready') {
-    if (showFullControls) {
+    if (controlsWidth >= 1540) {
       panel(root, buttonX - 190, 865, 157, 157, 13, 0x53586f, 0x3d4257);
       const arrows = new Graphics();
       const cx = buttonX - 112;
@@ -314,7 +321,7 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
     panel(root, buttonX, 865, buttonWidth, 157, 15, 0x39c85a, 0x39c85a);
     addText(root, 'Play', buttonX + buttonWidth / 2, 943, viewWidth < 760 ? 42 : 49, 0xffffff, 0.5, 0.5, '900');
   } else {
-    if (showCashout) {
+    if (canFitCashout) {
       panel(root, cashoutX, 867, cashoutWidth, 158, 14, 0xffc21b, 0xffc21b);
       addText(root, 'CASH OUT', cashoutX + cashoutWidth / 2, 930, cashoutWidth < 220 ? 29 : 35, 0x111829, 0.5, 0.5, '900');
       addText(root, `${cashout} USD`, cashoutX + cashoutWidth / 2, 968, cashoutWidth < 220 ? 28 : 34, 0x111829, 0.5, 0.5, '900');

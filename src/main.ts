@@ -3,6 +3,10 @@ import { Application, Container, Graphics, Text, TextStyle } from 'pixi.js';
 type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead';
 type GameState = 'ready' | 'running' | 'burned';
 type FontWeight = 'normal' | 'bold' | '400' | '500' | '600' | '700' | '800' | '900';
+type LayoutInfo = {
+  scale: number;
+  viewWidth: number;
+};
 
 const DESIGN_WIDTH = 2048;
 const DESIGN_HEIGHT = 1024;
@@ -59,9 +63,9 @@ function panel(parent: Container, x: number, y: number, w: number, h: number, r:
   return g;
 }
 
-function drawTopBar(root: Container): void {
+function drawTopBar(root: Container, viewWidth: number, balance: string): void {
   const bar = new Graphics();
-  bar.rect(0, 0, DESIGN_WIDTH, TOP_H).fill(0x3a3e50);
+  bar.rect(0, 0, viewWidth, TOP_H).fill(0x3a3e50);
   root.addChild(bar);
 
   addText(root, 'CHICKEN R', 28, 24, 40, 0xffffff, 0, 0.5, '900');
@@ -71,30 +75,43 @@ function drawTopBar(root: Container): void {
   root.addChild(coin);
   addText(root, 'AD', 286, 24, 40, 0xffffff, 0, 0.5, '900');
 
-  panel(root, 1562, 5, 160, 35, 6, 0x555a70, 0x555a70, 0.88);
+  const menuX = viewWidth - 29;
+  const expandX = viewWidth - 78;
+  const balanceW = Math.min(192, Math.max(138, viewWidth * 0.15));
+  const balanceX = expandX - balanceW - 18;
+  const helpW = 160;
+  const helpX = balanceX - helpW - 18;
+  const showHelp = viewWidth >= 980;
+  const showBalance = viewWidth >= 660;
+
+  if (showHelp) panel(root, helpX, 5, helpW, 35, 6, 0x555a70, 0x555a70, 0.88);
   const info = new Graphics();
-  info.circle(1586, 22, 7).stroke({ width: 2, color: 0xffffff });
-  info.circle(1586, 18, 1.8).fill(0xffffff);
-  info.rect(1585.2, 21, 1.6, 7).fill(0xffffff);
-  root.addChild(info);
-  addText(root, 'How to play?', 1604, 22, 16, 0xffffff, 0, 0.5, '800');
+  if (showHelp) {
+    info.circle(helpX + 24, 22, 7).stroke({ width: 2, color: 0xffffff });
+    info.circle(helpX + 24, 18, 1.8).fill(0xffffff);
+    info.rect(helpX + 23.2, 21, 1.6, 7).fill(0xffffff);
+    root.addChild(info);
+    addText(root, 'How to play?', helpX + 42, 22, 16, 0xffffff, 0, 0.5, '800');
+  }
 
-  panel(root, 1740, 5, 192, 35, 6, 0x555a70, 0x555a70, 0.88);
-  addText(root, '1 000 000', 1818, 22, 18, 0xffffff, 0.5, 0.5, '900');
-  const smallCoin = new Graphics();
-  smallCoin.circle(1883, 22, 10).fill(0xf7f8ff);
-  root.addChild(smallCoin);
-  addText(root, '$', 1883, 22, 14, 0x535a6d, 0.5, 0.5, '900');
+  if (showBalance) {
+    panel(root, balanceX, 5, balanceW, 35, 6, 0x555a70, 0x555a70, 0.88);
+    addText(root, balance, balanceX + balanceW / 2 - 10, 22, 18, 0xffffff, 0.5, 0.5, '900');
+    const smallCoin = new Graphics();
+    smallCoin.circle(balanceX + balanceW - 30, 22, 10).fill(0xf7f8ff);
+    root.addChild(smallCoin);
+    addText(root, '$', balanceX + balanceW - 30, 22, 14, 0x535a6d, 0.5, 0.5, '900');
+  }
 
-  panel(root, 1950, 5, 34, 35, 6, 0x555a70, 0x555a70, 0.88);
+  panel(root, expandX - 17, 5, 34, 35, 6, 0x555a70, 0x555a70, 0.88);
   const expand = new Graphics();
-  expand.moveTo(1959, 18).lineTo(1959, 13).lineTo(1964, 13).moveTo(1975, 13).lineTo(1980, 13).lineTo(1980, 18);
-  expand.moveTo(1959, 27).lineTo(1959, 32).lineTo(1964, 32).moveTo(1975, 32).lineTo(1980, 32).lineTo(1980, 27);
+  expand.moveTo(expandX - 10, 18).lineTo(expandX - 10, 13).lineTo(expandX - 5, 13).moveTo(expandX + 11, 13).lineTo(expandX + 16, 13).lineTo(expandX + 16, 18);
+  expand.moveTo(expandX - 10, 27).lineTo(expandX - 10, 32).lineTo(expandX - 5, 32).moveTo(expandX + 11, 32).lineTo(expandX + 16, 32).lineTo(expandX + 16, 27);
   expand.stroke({ width: 2, color: 0xffffff });
   root.addChild(expand);
 
   const menu = new Graphics();
-  for (let i = 0; i < 3; i++) menu.roundRect(2019, 15 + i * 7, 18, 2.5, 1.2).fill(0xffffff);
+  for (let i = 0; i < 3; i++) menu.roundRect(menuX - 9, 15 + i * 7, 18, 2.5, 1.2).fill(0xffffff);
   root.addChild(menu);
 }
 
@@ -238,54 +255,73 @@ function drawFlame(parent: Container, x: number, y: number, scale: number): Cont
   return flame;
 }
 
-function drawControls(root: Container, state: GameState, balance: string, cashout: string): void {
+function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number): void {
   const bottom = new Graphics();
-  bottom.rect(0, BOTTOM_Y, DESIGN_WIDTH, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
+  bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
   root.addChild(bottom);
 
-  panel(root, 42, 838, 1964, 215, 25, 0x43485d, 0x61735f, 0.96);
-  panel(root, 71, 865, 398, 76, 7, 0x4d5269, 0x3b4057);
-  panel(root, 86, 881, 68, 47, 5, 0x62687e, 0x62687e);
-  addText(root, 'MIN', 120, 905, 23, 0xffffff, 0.5, 0.5, '900');
-  addText(root, '3', 267, 905, 24, 0xffffff, 0.5, 0.5, '900');
-  panel(root, 377, 881, 79, 47, 5, 0x62687e, 0x62687e);
-  addText(root, 'MAX', 416, 905, 23, 0xffffff, 0.5, 0.5, '900');
+  const margin = viewWidth < 900 ? 24 : 42;
+  const panelWidth = Math.max(0, viewWidth - margin * 2);
+  panel(root, margin, 838, panelWidth, 215, 25, 0x43485d, 0x61735f, 0.96);
 
-  const stakes = ['2 $', '3 $', '8 $', '20 $'];
-  for (let i = 0; i < stakes.length; i++) {
-    panel(root, 71 + i * 101, 962, 82, 64, 8, 0x52576e, 0x3b4057);
-    addText(root, stakes[i], 112 + i * 101, 994, 24, 0xffffff, 0.5, 0.5, '900');
+  const buttonWidth = Math.min(viewWidth < 900 ? 300 : 335, Math.max(220, panelWidth));
+  const buttonX = viewWidth - margin - buttonWidth;
+  const showCashout = state !== 'ready' && viewWidth >= 760;
+  const cashoutWidth = showCashout ? Math.min(247, Math.max(190, buttonX - margin - 28)) : 0;
+  const cashoutX = buttonX - 32 - cashoutWidth;
+  const controlsRight = showCashout ? cashoutX - 34 : buttonX - 34;
+  const showFullControls = controlsRight >= 1340;
+  const showCompactControls = !showFullControls && controlsRight >= 860;
+
+  if (showFullControls || showCompactControls) {
+    panel(root, 71, 865, 398, 76, 7, 0x4d5269, 0x3b4057);
+    panel(root, 86, 881, 68, 47, 5, 0x62687e, 0x62687e);
+    addText(root, 'MIN', 120, 905, 23, 0xffffff, 0.5, 0.5, '900');
+    addText(root, '3', 267, 905, 24, 0xffffff, 0.5, 0.5, '900');
+    panel(root, 377, 881, 79, 47, 5, 0x62687e, 0x62687e);
+    addText(root, 'MAX', 416, 905, 23, 0xffffff, 0.5, 0.5, '900');
+
+    const stakes = ['2 $', '3 $', '8 $', '20 $'];
+    for (let i = 0; i < stakes.length; i++) {
+      panel(root, 71 + i * 101, 962, 82, 64, 8, 0x52576e, 0x3b4057);
+      addText(root, stakes[i], 112 + i * 101, 994, 24, 0xffffff, 0.5, 0.5, '900');
+    }
+
+    addText(root, 'Difficulty', 503, 883, 26, 0xffffff, 0, 0.5, '700');
+    const difficultyWidth = showFullControls ? 918 : Math.max(350, controlsRight - 504);
+    panel(root, 504, 960, difficultyWidth, 61, 9, 0x4d5268, 0x383d54);
+    const labels = showFullControls ? ['Easy', 'Medium', 'Hard', 'Hardcore'] : ['Easy', 'Medium'];
+    const segmentWidth = difficultyWidth / labels.length;
+    for (let i = 0; i < labels.length; i++) {
+      if (i === 0) panel(root, 511, 967, Math.max(135, segmentWidth - 14), 48, 9, 0x6b7085, 0x6b7085);
+      addText(root, labels[i], 504 + segmentWidth * i + segmentWidth / 2, 991, 24, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+    }
+
+    if (showFullControls) addText(root, 'Chance of collision', 1188, 882, 27, 0xc3c6d1, 0, 0.5, '500');
   }
-
-  addText(root, 'Difficulty', 503, 883, 26, 0xffffff, 0, 0.5, '700');
-  panel(root, 504, 960, 918, 61, 9, 0x4d5268, 0x383d54);
-  const labels = ['Easy', 'Medium', 'Hard', 'Hardcore'];
-  for (let i = 0; i < labels.length; i++) {
-    if (i === 0) panel(root, 511, 967, 215, 48, 9, 0x6b7085, 0x6b7085);
-    addText(root, labels[i], 618 + i * 225, 991, 24, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
-  }
-
-  addText(root, 'Chance of collision', 1188, 882, 27, 0xc3c6d1, 0, 0.5, '500');
 
   if (state === 'ready') {
-    panel(root, 1452, 865, 157, 157, 13, 0x53586f, 0x3d4257);
-    const arrows = new Graphics();
-    arrows.arc(1530, 945, 30, -0.7, 2.4).stroke({ width: 6, color: 0xffffff });
-    arrows.arc(1530, 945, 30, 2.45, 5.5).stroke({ width: 6, color: 0xffffff });
-    arrows.moveTo(1503, 934).lineTo(1495, 955).lineTo(1516, 951).fill(0xffffff);
-    arrows.moveTo(1557, 956).lineTo(1566, 934).lineTo(1544, 938).fill(0xffffff);
-    root.addChild(arrows);
-    panel(root, 1642, 865, 335, 157, 15, 0x39c85a, 0x39c85a);
-    addText(root, 'Play', 1810, 943, 49, 0xffffff, 0.5, 0.5, '900');
+    if (showFullControls) {
+      panel(root, buttonX - 190, 865, 157, 157, 13, 0x53586f, 0x3d4257);
+      const arrows = new Graphics();
+      const cx = buttonX - 112;
+      arrows.arc(cx, 945, 30, -0.7, 2.4).stroke({ width: 6, color: 0xffffff });
+      arrows.arc(cx, 945, 30, 2.45, 5.5).stroke({ width: 6, color: 0xffffff });
+      arrows.moveTo(cx - 27, 934).lineTo(cx - 35, 955).lineTo(cx - 14, 951).fill(0xffffff);
+      arrows.moveTo(cx + 27, 956).lineTo(cx + 36, 934).lineTo(cx + 14, 938).fill(0xffffff);
+      root.addChild(arrows);
+    }
+    panel(root, buttonX, 865, buttonWidth, 157, 15, 0x39c85a, 0x39c85a);
+    addText(root, 'Play', buttonX + buttonWidth / 2, 943, viewWidth < 760 ? 42 : 49, 0xffffff, 0.5, 0.5, '900');
   } else {
-    panel(root, 1452, 867, 247, 158, 14, 0xffc21b, 0xffc21b);
-    addText(root, 'CASH OUT', 1576, 930, 35, 0x111829, 0.5, 0.5, '900');
-    addText(root, `${cashout} USD`, 1576, 968, 34, 0x111829, 0.5, 0.5, '900');
-    panel(root, 1731, 867, 247, 158, 14, state === 'burned' ? 0x3b9657 : 0x39c85a, 0x39c85a);
-    addText(root, 'GO', 1855, 946, 43, 0xffffff, 0.5, 0.5, '900');
+    if (showCashout) {
+      panel(root, cashoutX, 867, cashoutWidth, 158, 14, 0xffc21b, 0xffc21b);
+      addText(root, 'CASH OUT', cashoutX + cashoutWidth / 2, 930, cashoutWidth < 220 ? 29 : 35, 0x111829, 0.5, 0.5, '900');
+      addText(root, `${cashout} USD`, cashoutX + cashoutWidth / 2, 968, cashoutWidth < 220 ? 28 : 34, 0x111829, 0.5, 0.5, '900');
+    }
+    panel(root, buttonX, 867, buttonWidth, 158, 14, state === 'burned' ? 0x3b9657 : 0x39c85a, 0x39c85a);
+    addText(root, 'GO', buttonX + buttonWidth / 2, 946, 43, 0xffffff, 0.5, 0.5, '900');
   }
-
-  addText(root, balance, 1818, 22, 18, 0xffffff, 0.5, 0.5, '900');
 }
 
 async function boot() {
@@ -299,8 +335,9 @@ async function boot() {
   });
   document.body.appendChild(app.canvas);
 
-  const root = new Container();
-  app.stage.addChild(root);
+  const worldLayer = new Container();
+  const uiLayer = new Container();
+  app.stage.addChild(worldLayer, uiLayer);
 
   let gameState: GameState = 'ready';
   let activeIndex = -1;
@@ -313,21 +350,53 @@ async function boot() {
   let burnedAt = 0;
   let flame: Container | undefined;
   let pads: PadView[] = [];
+  let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
+  let cameraX = 0;
+  let targetCameraX = 0;
   const chicken = makeChicken();
 
+  function clampCamera(value: number) {
+    return Math.max(0, Math.min(value, Math.max(0, DESIGN_WIDTH - layoutInfo.viewWidth)));
+  }
+
+  function updateCameraTarget() {
+    if (gameState === 'ready') {
+      targetCameraX = 0;
+      return;
+    }
+
+    targetCameraX = clampCamera(chickenX - layoutInfo.viewWidth * 0.36);
+  }
+
+  function applyCamera() {
+    worldLayer.x = -cameraX * layoutInfo.scale;
+  }
+
   function layout() {
-    root.scale.set(app.renderer.width / DESIGN_WIDTH, app.renderer.height / DESIGN_HEIGHT);
-    root.position.set(0, 0);
+    const scale = app.screen.height / DESIGN_HEIGHT;
+    layoutInfo = {
+      scale,
+      viewWidth: app.screen.width / scale,
+    };
+    worldLayer.scale.set(scale);
+    uiLayer.scale.set(scale);
+    worldLayer.y = 0;
+    uiLayer.position.set(0, 0);
+    cameraX = clampCamera(cameraX);
+    targetCameraX = clampCamera(targetCameraX);
+    applyCamera();
+    app.stage.hitArea = app.screen;
   }
 
   function render() {
-    root.removeChildren();
+    worldLayer.removeChildren();
+    uiLayer.removeChildren();
     pads = [];
     flame = undefined;
 
-    drawTopBar(root);
-    drawLivePanel(root);
-    drawStage(root);
+    drawTopBar(uiLayer, layoutInfo.viewWidth, balance);
+    drawLivePanel(worldLayer);
+    drawStage(worldLayer);
 
     for (let i = 0; i < MULTIPLIERS.length; i++) {
       let state: PadState = 'idle';
@@ -338,21 +407,23 @@ async function boot() {
 
       const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state);
       pads.push(pad);
-      root.addChild(pad.root);
+      worldLayer.addChild(pad.root);
     }
 
-    for (let i = 0; i < MULTIPLIERS.length; i++) drawVent(root, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27);
+    for (let i = 0; i < MULTIPLIERS.length; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27);
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
-    root.addChild(chicken);
+    worldLayer.addChild(chicken);
 
     if (gameState === 'burned') {
       const x = FIRST_PAD_X + activeIndex * PAD_STEP;
-      flame = drawFlame(root, x, FLOOR_Y - 85, 1.65);
+      flame = drawFlame(worldLayer, x, FLOOR_Y - 85, 1.65);
     }
 
-    drawControls(root, gameState, balance, cashout);
+    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth);
+    updateCameraTarget();
+    applyCamera();
   }
 
   function reviveAtStart() {
@@ -365,6 +436,7 @@ async function boot() {
     moveProgress = 1;
     burnedAt = 0;
     chicken.rotation = 0;
+    targetCameraX = 0;
     render();
   }
 
@@ -378,6 +450,7 @@ async function boot() {
     targetX = chickenX;
     moveProgress = 1;
     burnedAt = 0;
+    updateCameraTarget();
     render();
   }
 
@@ -420,6 +493,10 @@ async function boot() {
       chicken.y = chickenY + Math.sin(t * 4) * 3;
     }
 
+    updateCameraTarget();
+    cameraX += (targetCameraX - cameraX) * Math.min(1, ticker.deltaTime * 0.12);
+    applyCamera();
+
     for (const pad of pads) {
       if (pad.state === 'active' || pad.state === 'burned') pad.root.scale.set(1 + Math.sin(t * 4) * 0.015);
       else pad.root.scale.set(1);
@@ -435,9 +512,12 @@ async function boot() {
     }
   });
 
-  window.addEventListener('resize', layout);
-  render();
   layout();
+  render();
+  window.addEventListener('resize', () => {
+    layout();
+    render();
+  });
 }
 
 boot();

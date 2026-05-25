@@ -40,14 +40,14 @@ const GAME_SETTINGS = {
 const PAD_STEP = 282;
 const FIRST_PAD_X = SIDE_W + 142;
 const PAD_Y = TOP_H + 317;
-const CHICKEN_GROUND_Y = FLOOR_Y - 68;
+const CHICKEN_GROUND_Y = FLOOR_Y + 6;
 const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
 const CHICKEN_SPRITE_URL = '/assets/chicken-sprite.png';
-const CHICKEN_SPRITE_SCALE = 0.56;
+const CHICKEN_SPRITE_SCALE = 0.74;
 const CHICKEN_IDLE_FRAMES: FrameRect[] = Array.from({ length: 8 }, (_, index) => ({
   x: index * 192,
   y: 736,
@@ -302,7 +302,7 @@ function makeChicken(frames?: ChickenFrames): ChickenActor {
 
   if (frames) {
     const sprite = new Sprite(frames.idle[0]);
-    sprite.anchor.set(0.5, 0.88);
+    sprite.anchor.set(0.5, 0.82);
     sprite.scale.set(CHICKEN_SPRITE_SCALE);
     c.frames = frames;
     c.sprite = sprite;
@@ -310,6 +310,7 @@ function makeChicken(frames?: ChickenFrames): ChickenActor {
     return c;
   }
 
+  c.pivot.set(0, 96);
   const body = new Graphics();
   body.ellipse(0, 0, 76, 50).fill(0xf4fbff).stroke({ width: 5, color: 0xdde8ec });
   body.ellipse(-58, -8, 42, 37).fill(0xf8fdff).stroke({ width: 5, color: 0xdde8ec });

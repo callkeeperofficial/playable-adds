@@ -22,6 +22,8 @@ type ChickenFrames = {
   jump: Texture[];
   dead: Texture[];
 };
+type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padBurned';
+type ObjectSprites = Record<ObjectSpriteKey, Texture>;
 type ChickenActor = Container & {
   frames?: ChickenFrames;
   sprite?: Sprite;
@@ -48,6 +50,12 @@ const CHICKEN_GROUND_Y = FLOOR_Y + 6;
 const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
+const STARTING_BALANCE = 1000000;
+const STAKE_AMOUNT = 3;
+const CASHOUT_BASE = 3.09;
+const CASHOUT_STEP = 0.21;
+const MOVE_SPEED = 0.025;
+const MOVE_ANIMATION_FPS = 8;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
 const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
@@ -56,6 +64,7 @@ const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
   jump: `${import.meta.env.BASE_URL}assets/chicken-jump.png`,
   dead: `${import.meta.env.BASE_URL}assets/chicken-dead.png`,
 };
+const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
 const CHICKEN_SPRITE_SCALE = 0.72;
 const CHICKEN_DEAD_SCALE = 0.5;
 const CHICKEN_CELL = 302;
@@ -68,6 +77,13 @@ const CHICKEN_DEAD_FRAMES: FrameRect[] = [{
   w: 482,
   h: 424,
 }];
+const OBJECT_SPRITE_FRAMES: Record<ObjectSpriteKey, FrameRect> = {
+  padPassed: { x: 1240, y: 0, w: 420, h: 420 },
+  padActive: { x: 1478, y: 418, w: 402, h: 410 },
+  padIdle: { x: 620, y: 750, w: 408, h: 420 },
+  padBack: { x: 1018, y: 742, w: 438, h: 480 },
+  padBurned: { x: 1470, y: 822, w: 410, h: 430 },
+};
 const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
   const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
   return `${value.toFixed(2)}x`;
@@ -115,6 +131,13 @@ function addText(parent: Container, value: string, x: number, y: number, size: n
   item.position.set(x, y);
   parent.addChild(item);
   return item;
+}
+
+function formatBalance(value: number): string {
+  const fixed = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2);
+  const [whole, decimal] = fixed.split('.');
+  const formattedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return decimal ? `${formattedWhole}.${decimal}` : formattedWhole;
 }
 
 function panel(parent: Container, x: number, y: number, w: number, h: number, r: number, color: number, stroke = 0x000000, alpha = 1): Graphics {
@@ -256,8 +279,40 @@ function drawVent(parent: Container, x: number, y: number): void {
   parent.addChild(vent);
 }
 
-function drawPad(parent: Container, label: string, state: PadState): void {
+function addMarkerSprite(parent: Container, texture: Texture, targetSize: number, y = 0): Sprite {
+  const sprite = new Sprite(texture);
+  sprite.anchor.set(0.5);
+  sprite.position.set(0, y);
+  sprite.scale.set(targetSize / Math.max(texture.width, texture.height));
+  parent.addChild(sprite);
+  return sprite;
+}
+
+function drawSpritePad(parent: Container, label: string, state: PadState, sprites: ObjectSprites): boolean {
+  if (state === 'prize') return false;
+
+  addMarkerSprite(parent, sprites.padBack, 224, 12);
+
+  if (state === 'dead' || state === 'passed') {
+    addMarkerSprite(parent, sprites.padPassed, 190, 0);
+    return true;
+  }
+
+  if (state === 'burned') {
+    addMarkerSprite(parent, sprites.padBurned, 192, 0);
+    return true;
+  }
+
+  const marker = state === 'active' ? sprites.padActive : sprites.padIdle;
+  addMarkerSprite(parent, marker, 192, 0);
+  addText(parent, label, 0, 6, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
+  return true;
+}
+
+function drawPad(parent: Container, label: string, state: PadState, sprites?: ObjectSprites): void {
   parent.removeChildren();
+  if (sprites && drawSpritePad(parent, label, state, sprites)) return;
+
   const color = state === 'active' || state === 'passed' ? 0x25b94a : state === 'dead' || state === 'prize' ? 0xf3c62d : state === 'burned' ? 0xd12f68 : 0x596596;
   const ring = state === 'active' || state === 'passed' ? 0x38ef55 : state === 'dead' || state === 'prize' ? 0xffdf44 : state === 'burned' ? 0xff386f : 0x7480c4;
 
@@ -292,10 +347,10 @@ function drawPad(parent: Container, label: string, state: PadState): void {
   addText(parent, label, 0, 6, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
 }
 
-function makePad(label: string, x: number, state: PadState): PadView {
+function makePad(label: string, x: number, state: PadState, sprites?: ObjectSprites): PadView {
   const root = new Container();
   root.position.set(x, PAD_Y);
-  drawPad(root, label, state);
+  drawPad(root, label, state, sprites);
   return { root, state };
 }
 
@@ -304,6 +359,23 @@ function makeSpriteFrames(sheet: Texture, frames: FrameRect[]): Texture[] {
     source: sheet.source,
     frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
   }));
+}
+
+async function loadObjectSprites(): Promise<ObjectSprites | undefined> {
+  try {
+    const sheet = await Assets.load<Texture>(OBJECTS_SPRITE_URL);
+    return Object.fromEntries(
+      Object.entries(OBJECT_SPRITE_FRAMES).map(([key, frame]) => [
+        key,
+        new Texture({
+          source: sheet.source,
+          frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+        }),
+      ]),
+    ) as ObjectSprites;
+  } catch {
+    return undefined;
+  }
 }
 
 async function loadChickenFrames(): Promise<ChickenFrames | undefined> {
@@ -363,7 +435,7 @@ function updateChickenFrame(chicken: ChickenActor, state: ChickenAnimationState,
   if (!chicken.sprite || !chicken.frames) return;
 
   const frames = chicken.frames[state];
-  const fps = state === 'idle' ? 12 : state === 'dead' ? 1 : 14;
+  const fps = state === 'idle' ? 12 : state === 'dead' ? 1 : MOVE_ANIMATION_FPS;
   const frameIndex = state === 'dead' ? 0 : Math.floor(time * fps) % frames.length;
   const breath = state === 'idle' ? Math.sin(time * 4.5) * 0.012 : 0;
   const scale = state === 'dead' ? CHICKEN_DEAD_SCALE : CHICKEN_SPRITE_SCALE;
@@ -442,7 +514,7 @@ function drawGoButton(parent: Container, label: string, x: number, y: number, w:
   addText(parent, label, x + w / 2, y + h / 2, Math.min(46, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
 }
 
-function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean, onGo: ButtonHandler): void {
+function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
   const goColor = state === 'burned' ? 0x3b9657 : 0x39c85a;
   const readyLabel = state === 'ready' ? 'Play' : 'GO';
 
@@ -454,7 +526,8 @@ function drawActions(parent: Container, state: GameState, cashout: string, x: nu
   }
 
   const actionW = (w - gap) / 2;
-  panel(parent, x, y, actionW, h, 18, 0xffc21b, 0xffc21b);
+  const cashButton = panel(parent, x, y, actionW, h, 18, 0xffc21b, 0xffc21b);
+  if (state === 'running') bindButton(cashButton, x, y, actionW, h, onCashOut);
   const cashFont = actionW < 260 ? 27 : 34;
   addText(parent, 'CASH OUT', x + actionW / 2, y + h * 0.38, cashFont, 0x111829, 0.5, 0.5, '900');
   addText(parent, `${cashout} USD`, x + actionW / 2, y + h * 0.66, Math.max(26, cashFont - 1), 0x111829, 0.5, 0.5, '900');
@@ -484,7 +557,7 @@ function drawMinimalControls(root: Container, state: GameState, cardX: number, c
   drawGoButton(root, state === 'ready' ? 'Play' : 'GO', cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, onGo);
 }
 
-function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler): void {
+function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
   const padX = w < 720 ? 22 : 32;
   const contentX = x + padX;
   const contentW = w - padX * 2;
@@ -495,10 +568,10 @@ function drawStackedControls(root: Container, state: GameState, cashout: string,
 
   drawWagerSelector(root, contentX, selectorY, contentW, 42);
   drawStakeRow(root, contentX, stakeY, contentW, 44);
-  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430, onGo);
+  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430, onGo, onCashOut);
 }
 
-function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, onGo: ButtonHandler): void {
+function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
   const contentX = x + 28;
   const contentY = y + 24;
   const contentW = w - 56;
@@ -517,10 +590,10 @@ function drawWideControls(root: Container, state: GameState, cashout: string, x:
     addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, 0xc3c6d1, 0.5, 0.5, '500');
   }
 
-  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready', onGo);
+  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready', onGo, onCashOut);
 }
 
-function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number, onGo: ButtonHandler): void {
+function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
   const bottom = new Graphics();
   bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
   root.addChild(bottom);
@@ -540,11 +613,11 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   }
 
   if (isWide) {
-    drawWideControls(root, state, cashout, cardX, cardY, cardWidth, onGo);
+    drawWideControls(root, state, cashout, cardX, cardY, cardWidth, onGo, onCashOut);
     return;
   }
 
-  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight, onGo);
+  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight, onGo, onCashOut);
 }
 
 function drawVictoryBanner(root: Container, viewWidth: number): void {
@@ -572,7 +645,8 @@ async function boot() {
 
   let gameState: GameState = 'ready';
   let activeIndex = -1;
-  let balance = '1 000 000';
+  let balanceValue = STARTING_BALANCE;
+  let balance = formatBalance(balanceValue);
   let cashout = '0';
   let chickenX = START_CHICKEN_X;
   let chickenY = START_CHICKEN_Y;
@@ -587,7 +661,10 @@ async function boot() {
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
   let cameraX = 0;
   let targetCameraX = 0;
-  const chickenFrames = await loadChickenFrames();
+  const [chickenFrames, objectSprites] = await Promise.all([
+    loadChickenFrames(),
+    loadObjectSprites(),
+  ]);
   const chicken = makeChicken(chickenFrames);
 
   function clampCamera(value: number) {
@@ -662,7 +739,7 @@ async function boot() {
       else if (i === activeIndex) state = 'active';
       if (gameState === 'burned' && i === 0) state = 'dead';
 
-      const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state);
+      const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state, objectSprites);
       pads.push(pad);
       worldLayer.addChild(pad.root);
     }
@@ -679,7 +756,7 @@ async function boot() {
       flame = drawFlame(worldLayer, x, FLOOR_Y - 85, 1.65);
     }
 
-    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth, advance);
+    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth, advance, cashOut);
     if (gameState === 'won') drawVictoryBanner(uiLayer, layoutInfo.viewWidth);
     updateCameraTarget();
     applyCamera();
@@ -728,8 +805,9 @@ async function boot() {
   function startRun() {
     gameState = 'running';
     activeIndex = 0;
-    balance = '999 997';
-    cashout = '3.09';
+    balanceValue = Math.max(0, balanceValue - STAKE_AMOUNT);
+    balance = formatBalance(balanceValue);
+    cashout = CASHOUT_BASE.toFixed(2);
     chickenX = FIRST_PAD_X;
     chickenY = RUN_CHICKEN_Y;
     targetX = chickenX;
@@ -742,6 +820,18 @@ async function boot() {
     render();
   }
 
+  function cashOut() {
+    if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0) return;
+
+    const payout = Number(cashout);
+    if (Number.isFinite(payout)) {
+      balanceValue += payout;
+      balance = formatBalance(balanceValue);
+    }
+
+    resetAtStart();
+  }
+
   function advance() {
     if (gameState === 'ready') {
       startRun();
@@ -752,7 +842,7 @@ async function boot() {
     if (activeIndex >= PRIZE_INDEX) return;
 
     activeIndex += 1;
-    cashout = (3.09 + activeIndex * 0.21).toFixed(2);
+    cashout = (CASHOUT_BASE + activeIndex * CASHOUT_STEP).toFixed(2);
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
     movementSprite = Math.random() < 0.5 ? 'go' : 'jump';
     moveProgress = 0;
@@ -773,7 +863,7 @@ async function boot() {
     const t = performance.now() / 1000;
 
     if (moveProgress < 1) {
-      moveProgress = Math.min(1, moveProgress + ticker.deltaTime * 0.055);
+      moveProgress = Math.min(1, moveProgress + ticker.deltaTime * MOVE_SPEED);
       const start = chickenX;
       const eased = 1 - Math.pow(1 - moveProgress, 3);
       chickenX = start + (targetX - start) * eased;

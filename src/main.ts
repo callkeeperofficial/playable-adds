@@ -26,7 +26,7 @@ type ChickenFrames = {
 };
 type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padBurned' | 'padPrize';
 type ObjectSprites = Record<ObjectSpriteKey, Texture>;
-type DecorSpriteKey = 'vent' | 'pedestal';
+type DecorSpriteKey = 'vent' | 'pedestal' | 'pad';
 type DecorSprites = Record<DecorSpriteKey, Texture>;
 type ChickenActor = Container & {
   frames?: ChickenFrames;
@@ -60,11 +60,8 @@ const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const STARTING_BALANCE = 1000000;
 const STAKE_AMOUNT = 3;
-const CASHOUT_BASE = 3.09;
-const CASHOUT_STEP = 0.21;
-const PRIZE_PAYOUT = 25;
-const MOVE_SPEED = 0.025;
-const MOVE_ANIMATION_FPS = 8;
+const MOVE_SPEED = 0.018;
+const MOVE_ANIMATION_FPS = 4;
 const REVIVE_DELAY_MS = 1200;
 const ROUND_MESSAGE_DELAY_MS = 1800;
 const BANK_STORAGE_KEY = 'chicken-road-banked-winnings';
@@ -105,6 +102,7 @@ const OBJECT_SPRITE_FRAMES: Record<ObjectSpriteKey, FrameRect> = {
 const DECOR_SPRITE_FRAMES: Record<DecorSpriteKey, FrameRect> = {
   vent: { x: 198, y: 1012, w: 370, h: 392 },
   pedestal: { x: 568, y: 1012, w: 282, h: 158 },
+  pad: { x: 853, y: 1012, w: 433, h: 68 },
 };
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   easy: 'Easy',
@@ -118,10 +116,11 @@ const DIFFICULTY_CHANCES: Record<Difficulty, { base: number; step: number; max: 
   hard: { base: 0.08, step: 0.024, max: 0.34 },
   hardcore: { base: 0.14, step: 0.042, max: 0.58 },
 };
-const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
+const MULTIPLIER_VALUES = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
   const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
-  return `${value.toFixed(2)}x`;
+  return value;
 });
+const MULTIPLIERS = MULTIPLIER_VALUES.map((value) => `${value.toFixed(2)}x`);
 const PRIZE_INDEX = MULTIPLIERS.length - 1;
 const LEVEL_WIDTH = FIRST_PAD_X + PRIZE_INDEX * PAD_STEP + 360;
 
@@ -178,9 +177,8 @@ function formatUsd(value: number): string {
   return value.toFixed(2);
 }
 
-function payoutForIndex(index: number): number {
-  if (index >= PRIZE_INDEX) return PRIZE_PAYOUT;
-  return CASHOUT_BASE + Math.max(0, index) * CASHOUT_STEP;
+function payoutForIndex(index: number, base: number): number {
+  return base * MULTIPLIER_VALUES[Math.max(0, Math.min(index, PRIZE_INDEX))];
 }
 
 function loadBankedWinnings(): number {
@@ -350,6 +348,12 @@ function drawStage(root: Container): void {
 
 function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites): void {
   if (decors) {
+    const pad = new Sprite(decors.pad);
+    pad.anchor.set(0.5, 1);
+    pad.position.set(x, FLOOR_Y + 4);
+    pad.scale.set(164 / pad.texture.width);
+    parent.addChild(pad);
+
     const sprite = new Sprite(decors.vent);
     sprite.anchor.set(0.5, 1);
     sprite.position.set(x, FLOOR_Y - 5);
@@ -359,6 +363,7 @@ function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites
   }
 
   const vent = new Graphics();
+  vent.roundRect(x - 82, FLOOR_Y - 12, 164, 18, 7).fill(0x697397);
   vent.roundRect(x - 84, y - 84, 168, 118, 84).fill(0x222945).stroke({ width: 7, color: 0x30385c });
   vent.roundRect(x - 78, y - 76, 156, 110, 78).stroke({ width: 7, color: 0x1b2138 });
   for (let i = -3; i <= 3; i++) {
@@ -610,7 +615,7 @@ function drawWagerSelector(parent: Container, x: number, y: number, w: number, h
 
   panel(parent, x + 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
   addText(parent, 'MIN', x + 16 + buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
-  addText(parent, '2', x + w / 2, y + h / 2, h < 52 ? 24 : 28, 0xc9ccd5, 0.5, 0.5, '900');
+  addText(parent, String(STAKE_AMOUNT), x + w / 2, y + h / 2, h < 52 ? 24 : 28, 0xc9ccd5, 0.5, 0.5, '900');
 
   panel(parent, x + w - buttonW - 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
   addText(parent, 'MAX', x + w - 16 - buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
@@ -846,12 +851,16 @@ async function boot() {
     balance = formatBalance(balanceValue);
   }
 
+  function currentRoundBase(): number {
+    return bankedWinnings > 0 ? bankedWinnings : STAKE_AMOUNT;
+  }
+
   function roundPayout(): number {
-    return activeIndex >= 0 ? payoutForIndex(activeIndex) : 0;
+    return activeIndex >= 0 ? payoutForIndex(activeIndex, currentRoundBase()) : currentRoundBase();
   }
 
   function roundCashoutValue(): number {
-    return Math.max(bankedWinnings, roundPayout());
+    return roundPayout();
   }
 
   function updateCashout() {
@@ -912,7 +921,7 @@ async function boot() {
       worldLayer.addChild(pad.root);
     }
 
-    for (let i = 0; i < MULTIPLIERS.length; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites);
+    for (let i = 0; i < PRIZE_INDEX; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites);
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
@@ -955,7 +964,7 @@ async function boot() {
   }
 
   function settleRound(title: string, nextBankValue: number) {
-    bankedWinnings = Math.max(bankedWinnings, nextBankValue);
+    bankedWinnings = nextBankValue;
     saveBankedWinnings(bankedWinnings);
     updateBalanceFromBank();
     cashout = formatUsd(bankedWinnings);
@@ -1027,7 +1036,7 @@ async function boot() {
     activeIndex += 1;
     updateCashout();
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
-    movementSprite = Math.random() < 0.5 ? 'go' : 'jump';
+    movementSprite = 'go';
     moveProgress = 0;
     landingResolved = false;
     render();

@@ -14,9 +14,13 @@ type FrameRect = {
   w: number;
   h: number;
 };
+type ChickenAnimationState = 'idle' | 'go' | 'jump' | 'dead';
+type ChickenMoveState = 'go' | 'jump';
 type ChickenFrames = {
   idle: Texture[];
+  go: Texture[];
   jump: Texture[];
+  dead: Texture[];
 };
 type ChickenActor = Container & {
   frames?: ChickenFrames;
@@ -46,20 +50,24 @@ const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
 const REVIVE_DELAY_MS = 1200;
 const VICTORY_DELAY_MS = 1500;
-const CHICKEN_SPRITE_URL = `${import.meta.env.BASE_URL}assets/chicken-sprite.png`;
-const CHICKEN_SPRITE_SCALE = 0.74;
-const CHICKEN_IDLE_FRAMES: FrameRect[] = [{
-  x: 384,
-  y: 736,
-  w: 192,
-  h: 219,
-}];
-const CHICKEN_JUMP_FRAMES: FrameRect[] = Array.from({ length: 4 }, (_, index) => ({
-  x: index * 384,
+const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
+  idle: `${import.meta.env.BASE_URL}assets/chicken-idle.png`,
+  go: `${import.meta.env.BASE_URL}assets/chicken-go.png`,
+  jump: `${import.meta.env.BASE_URL}assets/chicken-jump.png`,
+  dead: `${import.meta.env.BASE_URL}assets/chicken-dead.png`,
+};
+const CHICKEN_SPRITE_SCALE = 0.72;
+const CHICKEN_DEAD_SCALE = 0.5;
+const CHICKEN_CELL = 302;
+const CHICKEN_IDLE_FRAMES: FrameRect[] = gridFrames(5, 5, CHICKEN_CELL, CHICKEN_CELL, 24);
+const CHICKEN_GO_FRAMES: FrameRect[] = gridFrames(4, 4, CHICKEN_CELL, CHICKEN_CELL);
+const CHICKEN_JUMP_FRAMES: FrameRect[] = gridFrames(4, 3, CHICKEN_CELL, 362, 10);
+const CHICKEN_DEAD_FRAMES: FrameRect[] = [{
+  x: 0,
   y: 0,
-  w: 384,
-  h: 500,
-}));
+  w: 482,
+  h: 424,
+}];
 const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
   const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
   return `${value.toFixed(2)}x`;
@@ -71,6 +79,22 @@ type PadView = {
   root: Container;
   state: PadState;
 };
+
+function gridFrames(columns: number, rows: number, width: number, height: number, count = columns * rows): FrameRect[] {
+  const frames: FrameRect[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let column = 0; column < columns; column++) {
+      if (frames.length >= count) return frames;
+      frames.push({
+        x: column * width,
+        y: row * height,
+        w: width,
+        h: height,
+      });
+    }
+  }
+  return frames;
+}
 
 function text(value: string, size: number, fill: number | string, weight: FontWeight = '800', stroke = 0x22273d, strokeWidth = 0): Text {
   return new Text({
@@ -284,13 +308,18 @@ function makeSpriteFrames(sheet: Texture, frames: FrameRect[]): Texture[] {
 
 async function loadChickenFrames(): Promise<ChickenFrames | undefined> {
   try {
-    const response = await fetch(CHICKEN_SPRITE_URL, { method: 'HEAD' });
-    if (!response.ok) return undefined;
+    const [idleSheet, goSheet, jumpSheet, deadSheet] = await Promise.all([
+      Assets.load<Texture>(CHICKEN_ASSET_URLS.idle),
+      Assets.load<Texture>(CHICKEN_ASSET_URLS.go),
+      Assets.load<Texture>(CHICKEN_ASSET_URLS.jump),
+      Assets.load<Texture>(CHICKEN_ASSET_URLS.dead),
+    ]);
 
-    const sheet = await Assets.load<Texture>(CHICKEN_SPRITE_URL);
     return {
-      idle: makeSpriteFrames(sheet, CHICKEN_IDLE_FRAMES),
-      jump: makeSpriteFrames(sheet, CHICKEN_JUMP_FRAMES),
+      idle: makeSpriteFrames(idleSheet, CHICKEN_IDLE_FRAMES),
+      go: makeSpriteFrames(goSheet, CHICKEN_GO_FRAMES),
+      jump: makeSpriteFrames(jumpSheet, CHICKEN_JUMP_FRAMES),
+      dead: makeSpriteFrames(deadSheet, CHICKEN_DEAD_FRAMES),
     };
   } catch {
     return undefined;
@@ -302,7 +331,7 @@ function makeChicken(frames?: ChickenFrames): ChickenActor {
 
   if (frames) {
     const sprite = new Sprite(frames.idle[0]);
-    sprite.anchor.set(0.5, 0.82);
+    sprite.anchor.set(0.5, 0.86);
     sprite.scale.set(CHICKEN_SPRITE_SCALE);
     c.frames = frames;
     c.sprite = sprite;
@@ -330,19 +359,22 @@ function makeChicken(frames?: ChickenFrames): ChickenActor {
   return c;
 }
 
-function updateChickenFrame(chicken: ChickenActor, moving: boolean, time: number): void {
+function updateChickenFrame(chicken: ChickenActor, state: ChickenAnimationState, time: number): void {
   if (!chicken.sprite || !chicken.frames) return;
 
-  const frames = moving ? chicken.frames.jump : chicken.frames.idle;
-  const frameIndex = moving ? Math.floor(time * 12) % frames.length : 0;
-  const breath = moving ? 0 : Math.sin(time * 4.5) * 0.015;
+  const frames = chicken.frames[state];
+  const fps = state === 'idle' ? 12 : state === 'dead' ? 1 : 14;
+  const frameIndex = state === 'dead' ? 0 : Math.floor(time * fps) % frames.length;
+  const breath = state === 'idle' ? Math.sin(time * 4.5) * 0.012 : 0;
+  const scale = state === 'dead' ? CHICKEN_DEAD_SCALE : CHICKEN_SPRITE_SCALE;
 
   chicken.sprite.texture = frames[frameIndex];
+  chicken.sprite.anchor.set(0.5, state === 'dead' ? 0.9 : 0.86);
   chicken.sprite.scale.set(
-    CHICKEN_SPRITE_SCALE * (1 + breath),
-    CHICKEN_SPRITE_SCALE * (1 - breath * 0.45),
+    scale * (1 + breath),
+    scale * (1 - breath * 0.45),
   );
-  chicken.sprite.y = moving ? 0 : Math.sin(time * 4.5) * -1.5;
+  chicken.sprite.y = state === 'idle' ? Math.sin(time * 4.5) * -1.2 : 0;
 }
 
 function drawFlame(parent: Container, x: number, y: number, scale: number): Container {
@@ -549,6 +581,7 @@ async function boot() {
   let burnedAt = 0;
   let wonAt = 0;
   let landingResolved = true;
+  let movementSprite: ChickenMoveState = 'go';
   let flame: Container | undefined;
   let pads: PadView[] = [];
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
@@ -572,6 +605,12 @@ async function boot() {
 
   function applyCamera() {
     worldLayer.x = -cameraX * layoutInfo.scale;
+  }
+
+  function currentChickenState(): ChickenAnimationState {
+    if (gameState === 'burned') return 'dead';
+    if (moveProgress < 1) return movementSprite;
+    return 'idle';
   }
 
   function viewportSize() {
@@ -632,7 +671,7 @@ async function boot() {
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
-    updateChickenFrame(chicken, moveProgress < 1, performance.now() / 1000);
+    updateChickenFrame(chicken, currentChickenState(), performance.now() / 1000);
     worldLayer.addChild(chicken);
 
     if (gameState === 'burned') {
@@ -657,6 +696,7 @@ async function boot() {
     burnedAt = 0;
     wonAt = 0;
     landingResolved = true;
+    movementSprite = 'go';
     chicken.rotation = 0;
     targetCameraX = 0;
     render();
@@ -697,6 +737,7 @@ async function boot() {
     burnedAt = 0;
     wonAt = 0;
     landingResolved = true;
+    movementSprite = 'go';
     updateCameraTarget();
     render();
   }
@@ -713,12 +754,20 @@ async function boot() {
     activeIndex += 1;
     cashout = (3.09 + activeIndex * 0.21).toFixed(2);
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
+    movementSprite = Math.random() < 0.5 ? 'go' : 'jump';
     moveProgress = 0;
     landingResolved = false;
     render();
   }
 
   app.stage.hitArea = app.screen;
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight' && event.code !== 'ArrowRight') return;
+    if (event.repeat) return;
+    event.preventDefault();
+    advance();
+  });
 
   app.ticker.add((ticker) => {
     const t = performance.now() / 1000;
@@ -731,14 +780,17 @@ async function boot() {
       chickenY = RUN_CHICKEN_Y - Math.sin(moveProgress * Math.PI) * 72;
       chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.08;
       chicken.position.set(chickenX, chickenY);
-      updateChickenFrame(chicken, true, t);
+      updateChickenFrame(chicken, movementSprite, t);
       if (moveProgress === 1) {
         chicken.rotation = 0;
         resolveLanding();
       }
-    } else if (gameState !== 'burned') {
+    } else if (gameState === 'burned') {
+      chicken.y = chickenY;
+      updateChickenFrame(chicken, 'dead', t);
+    } else {
       chicken.y = chickenY + Math.sin(t * 4) * 3;
-      updateChickenFrame(chicken, false, t);
+      updateChickenFrame(chicken, 'idle', t);
     }
 
     updateCameraTarget();

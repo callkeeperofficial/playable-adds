@@ -16,17 +16,24 @@ type FrameRect = {
 };
 type ChickenAnimationState = 'idle' | 'go' | 'jump' | 'dead';
 type ChickenMoveState = 'go' | 'jump';
+type Difficulty = 'easy' | 'medium' | 'hard' | 'hardcore';
+type SoundKey = 'click' | 'lose' | 'soundtrack' | 'step' | 'win';
 type ChickenFrames = {
   idle: Texture[];
   go: Texture[];
   jump: Texture[];
   dead: Texture[];
 };
-type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padBurned';
+type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padBurned' | 'padPrize';
 type ObjectSprites = Record<ObjectSpriteKey, Texture>;
 type ChickenActor = Container & {
   frames?: ChickenFrames;
   sprite?: Sprite;
+};
+type RoundMessage = {
+  title: string;
+  amount: number;
+  total: number;
 };
 
 const DESIGN_WIDTH = 2048;
@@ -54,15 +61,24 @@ const STARTING_BALANCE = 1000000;
 const STAKE_AMOUNT = 3;
 const CASHOUT_BASE = 3.09;
 const CASHOUT_STEP = 0.21;
+const PRIZE_PAYOUT = 25;
 const MOVE_SPEED = 0.025;
 const MOVE_ANIMATION_FPS = 8;
 const REVIVE_DELAY_MS = 1200;
-const VICTORY_DELAY_MS = 1500;
+const ROUND_MESSAGE_DELAY_MS = 1800;
+const BANK_STORAGE_KEY = 'chicken-road-banked-winnings';
 const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
   idle: `${import.meta.env.BASE_URL}assets/chicken-idle.png`,
   go: `${import.meta.env.BASE_URL}assets/chicken-go.png`,
   jump: `${import.meta.env.BASE_URL}assets/chicken-jump.png`,
   dead: `${import.meta.env.BASE_URL}assets/chicken-dead.png`,
+};
+const AUDIO_URLS: Record<SoundKey, string> = {
+  click: `${import.meta.env.BASE_URL}assets/audio/button-click.webm`,
+  lose: `${import.meta.env.BASE_URL}assets/audio/lose.webm`,
+  soundtrack: `${import.meta.env.BASE_URL}assets/audio/soundtrack.webm`,
+  step: `${import.meta.env.BASE_URL}assets/audio/step.webm`,
+  win: `${import.meta.env.BASE_URL}assets/audio/win.webm`,
 };
 const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
 const CHICKEN_SPRITE_SCALE = 0.72;
@@ -78,11 +94,24 @@ const CHICKEN_DEAD_FRAMES: FrameRect[] = [{
   h: 424,
 }];
 const OBJECT_SPRITE_FRAMES: Record<ObjectSpriteKey, FrameRect> = {
+  padPrize: { x: 0, y: 0, w: 620, h: 742 },
   padPassed: { x: 1240, y: 0, w: 420, h: 420 },
   padActive: { x: 1478, y: 418, w: 402, h: 410 },
   padIdle: { x: 620, y: 750, w: 408, h: 420 },
   padBack: { x: 1018, y: 742, w: 438, h: 480 },
   padBurned: { x: 1470, y: 822, w: 410, h: 430 },
+};
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
+  hardcore: 'Hardcore',
+};
+const DIFFICULTY_CHANCES: Record<Difficulty, { base: number; step: number; max: number }> = {
+  easy: { base: 0.015, step: 0.004, max: 0.06 },
+  medium: { base: 0.04, step: 0.012, max: 0.16 },
+  hard: { base: 0.08, step: 0.024, max: 0.34 },
+  hardcore: { base: 0.14, step: 0.042, max: 0.58 },
 };
 const MULTIPLIERS = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
   const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
@@ -138,6 +167,59 @@ function formatBalance(value: number): string {
   const [whole, decimal] = fixed.split('.');
   const formattedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
   return decimal ? `${formattedWhole}.${decimal}` : formattedWhole;
+}
+
+function formatUsd(value: number): string {
+  return value.toFixed(2);
+}
+
+function payoutForIndex(index: number): number {
+  if (index >= PRIZE_INDEX) return PRIZE_PAYOUT;
+  return CASHOUT_BASE + Math.max(0, index) * CASHOUT_STEP;
+}
+
+function loadBankedWinnings(): number {
+  try {
+    const raw = window.localStorage?.getItem(BANK_STORAGE_KEY);
+    const value = raw ? Number(raw) : 0;
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveBankedWinnings(value: number): void {
+  try {
+    window.localStorage?.setItem(BANK_STORAGE_KEY, formatUsd(value));
+  } catch {
+    // Some embedded browsers can disable storage; the game should still run.
+  }
+}
+
+function createAudioController() {
+  const sounds = Object.fromEntries(
+    Object.entries(AUDIO_URLS).map(([key, url]) => {
+      const audio = new Audio(url);
+      audio.preload = 'auto';
+      audio.volume = key === 'soundtrack' ? 0.26 : 0.72;
+      if (key === 'soundtrack') audio.loop = true;
+      return [key, audio];
+    }),
+  ) as Record<SoundKey, HTMLAudioElement>;
+
+  function play(key: SoundKey): void {
+    const audio = sounds[key];
+    if (!audio) return;
+    if (key !== 'soundtrack') audio.currentTime = 0;
+    void audio.play().catch(() => undefined);
+  }
+
+  function startSoundtrack(): void {
+    if (!sounds.soundtrack.paused) return;
+    void sounds.soundtrack.play().catch(() => undefined);
+  }
+
+  return { play, startSoundtrack };
 }
 
 function panel(parent: Container, x: number, y: number, w: number, h: number, r: number, color: number, stroke = 0x000000, alpha = 1): Graphics {
@@ -289,9 +371,13 @@ function addMarkerSprite(parent: Container, texture: Texture, targetSize: number
 }
 
 function drawSpritePad(parent: Container, label: string, state: PadState, sprites: ObjectSprites): boolean {
-  if (state === 'prize') return false;
-
   addMarkerSprite(parent, sprites.padBack, 224, 12);
+
+  if (state === 'prize') {
+    addMarkerSprite(parent, sprites.padPrize, 236, -6);
+    addText(parent, `${formatUsd(PRIZE_PAYOUT)} USD`, 0, 96, 26, 0xfff0a8, 0.5, 0.5, '900', 0x3d2b08, 4);
+    return true;
+  }
 
   if (state === 'dead' || state === 'passed') {
     addMarkerSprite(parent, sprites.padPassed, 190, 0);
@@ -538,15 +624,22 @@ function drawActions(parent: Container, state: GameState, cashout: string, x: nu
   addText(parent, 'GO', goX + actionW / 2, y + h / 2, Math.min(46, Math.max(36, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
 }
 
-function drawDifficultyStrip(parent: Container, x: number, y: number, w: number): void {
+function drawDifficultyStrip(parent: Container, difficulty: Difficulty, x: number, y: number, w: number, onDifficulty: (difficulty: Difficulty) => void): void {
   addText(parent, 'Difficulty', x, y, 25, 0xffffff, 0, 0.5, '700');
   panel(parent, x, y + 58, w, 56, 9, 0x4d5268, 0x383d54);
 
-  const labels = ['Easy', 'Medium', 'Hard', 'Hardcore'];
-  const segmentW = w / labels.length;
-  panel(parent, x + 7, y + 65, segmentW - 14, 42, 9, 0x6b7085, 0x6b7085);
-  for (let i = 0; i < labels.length; i++) {
-    addText(parent, labels[i], x + segmentW * i + segmentW / 2, y + 86, 22, i === 0 ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+  const difficulties: Difficulty[] = ['easy', 'medium', 'hard', 'hardcore'];
+  const segmentW = w / difficulties.length;
+  for (let i = 0; i < difficulties.length; i++) {
+    const item = difficulties[i];
+    const isActive = item === difficulty;
+    const segmentX = x + segmentW * i;
+    const hit = new Graphics();
+    hit.rect(segmentX, y + 58, segmentW, 56).fill({ color: 0xffffff, alpha: 0.001 });
+    bindButton(hit, segmentX, y + 58, segmentW, 56, () => onDifficulty(item));
+    parent.addChild(hit);
+    if (isActive) panel(parent, segmentX + 7, y + 65, segmentW - 14, 42, 9, 0x6b7085, 0x6b7085);
+    addText(parent, DIFFICULTY_LABELS[item], segmentX + segmentW / 2, y + 86, 22, isActive ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
   }
 }
 
@@ -557,7 +650,7 @@ function drawMinimalControls(root: Container, state: GameState, cardX: number, c
   drawGoButton(root, state === 'ready' ? 'Play' : 'GO', cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, onGo);
 }
 
-function drawStackedControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
+function drawStackedControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
   const padX = w < 720 ? 22 : 32;
   const contentX = x + padX;
   const contentW = w - padX * 2;
@@ -571,7 +664,7 @@ function drawStackedControls(root: Container, state: GameState, cashout: string,
   drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430, onGo, onCashOut);
 }
 
-function drawWideControls(root: Container, state: GameState, cashout: string, x: number, y: number, w: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
+function drawWideControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, x: number, y: number, w: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
   const contentX = x + 28;
   const contentY = y + 24;
   const contentW = w - 56;
@@ -586,14 +679,14 @@ function drawWideControls(root: Container, state: GameState, cashout: string, x:
   drawStakeRow(root, contentX, contentY + 96, betW, 58);
 
   if (midW >= 480) {
-    drawDifficultyStrip(root, midX, contentY + 10, midW);
+    drawDifficultyStrip(root, difficulty, midX, contentY + 10, midW, onDifficulty);
     addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, 0xc3c6d1, 0.5, 0.5, '500');
   }
 
   drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready', onGo, onCashOut);
 }
 
-function drawControls(root: Container, state: GameState, cashout: string, viewWidth: number, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
+function drawControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, viewWidth: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
   const bottom = new Graphics();
   bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
   root.addChild(bottom);
@@ -613,17 +706,19 @@ function drawControls(root: Container, state: GameState, cashout: string, viewWi
   }
 
   if (isWide) {
-    drawWideControls(root, state, cashout, cardX, cardY, cardWidth, onGo, onCashOut);
+    drawWideControls(root, state, cashout, difficulty, cardX, cardY, cardWidth, onGo, onCashOut, onDifficulty);
     return;
   }
 
-  drawStackedControls(root, state, cashout, cardX, cardY, cardWidth, cardHeight, onGo, onCashOut);
+  drawStackedControls(root, state, cashout, difficulty, cardX, cardY, cardWidth, cardHeight, onGo, onCashOut, onDifficulty);
 }
 
-function drawVictoryBanner(root: Container, viewWidth: number): void {
+function drawRoundMessage(root: Container, viewWidth: number, message: RoundMessage): void {
   const x = viewWidth / 2;
-  panel(root, x - 190, 180, 380, 94, 20, 0xffc21b, 0x9f7412, 0.98);
-  addText(root, 'ПОБЕДА!', x, 226, 48, 0x111829, 0.5, 0.5, '900');
+  panel(root, x - 250, 170, 500, 140, 22, 0xffc21b, 0x9f7412, 0.98);
+  addText(root, message.title, x, 214, 46, 0x111829, 0.5, 0.5, '900');
+  addText(root, `+${formatUsd(message.amount)} USD`, x, 258, 34, 0x111829, 0.5, 0.5, '900');
+  addText(root, `Накоплено: ${formatUsd(message.total)} USD`, x, 292, 22, 0x34301c, 0.5, 0.5, '900');
 }
 
 async function boot() {
@@ -643,17 +738,21 @@ async function boot() {
   const uiLayer = new Container();
   app.stage.addChild(worldLayer, uiLayer);
 
+  const audio = createAudioController();
   let gameState: GameState = 'ready';
   let activeIndex = -1;
-  let balanceValue = STARTING_BALANCE;
+  let bankedWinnings = loadBankedWinnings();
+  let balanceValue = STARTING_BALANCE + bankedWinnings;
   let balance = formatBalance(balanceValue);
-  let cashout = '0';
+  let cashout = formatUsd(bankedWinnings);
+  let difficulty: Difficulty = 'easy';
   let chickenX = START_CHICKEN_X;
   let chickenY = START_CHICKEN_Y;
   let targetX = chickenX;
   let moveProgress = 1;
   let burnedAt = 0;
-  let wonAt = 0;
+  let roundMessageAt = 0;
+  let roundMessage: RoundMessage | undefined;
   let landingResolved = true;
   let movementSprite: ChickenMoveState = 'go';
   let flame: Container | undefined;
@@ -688,6 +787,19 @@ async function boot() {
     if (gameState === 'burned') return 'dead';
     if (moveProgress < 1) return movementSprite;
     return 'idle';
+  }
+
+  function updateBalanceFromBank() {
+    balanceValue = STARTING_BALANCE + bankedWinnings;
+    balance = formatBalance(balanceValue);
+  }
+
+  function roundPayout(): number {
+    return activeIndex >= 0 ? payoutForIndex(activeIndex) : 0;
+  }
+
+  function updateCashout() {
+    cashout = formatUsd(bankedWinnings + roundPayout());
   }
 
   function viewportSize() {
@@ -733,7 +845,7 @@ async function boot() {
 
     for (let i = 0; i < MULTIPLIERS.length; i++) {
       let state: PadState = 'idle';
-      if (gameState === 'won' && i === PRIZE_INDEX) state = 'prize';
+      if (i === PRIZE_INDEX && gameState !== 'burned') state = 'prize';
       else if (gameState === 'burned' && i === activeIndex) state = 'burned';
       else if (i < activeIndex) state = 'passed';
       else if (i === activeIndex) state = 'active';
@@ -756,8 +868,8 @@ async function boot() {
       flame = drawFlame(worldLayer, x, FLOOR_Y - 85, 1.65);
     }
 
-    drawControls(uiLayer, gameState, cashout, layoutInfo.viewWidth, advance, cashOut);
-    if (gameState === 'won') drawVictoryBanner(uiLayer, layoutInfo.viewWidth);
+    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, layoutInfo.viewWidth, advance, cashOut, setDifficulty);
+    if (roundMessage) drawRoundMessage(uiLayer, layoutInfo.viewWidth, roundMessage);
     updateCameraTarget();
     applyCamera();
   }
@@ -765,13 +877,15 @@ async function boot() {
   function resetAtStart() {
     gameState = 'ready';
     activeIndex = -1;
-    cashout = '0';
+    roundMessage = undefined;
+    roundMessageAt = 0;
+    updateBalanceFromBank();
+    updateCashout();
     chickenX = START_CHICKEN_X;
     chickenY = START_CHICKEN_Y;
     targetX = chickenX;
     moveProgress = 1;
     burnedAt = 0;
-    wonAt = 0;
     landingResolved = true;
     movementSprite = 'go';
     chicken.rotation = 0;
@@ -780,7 +894,24 @@ async function boot() {
   }
 
   function roastChance(index: number) {
-    return Math.min(0.002 + index * 0.0015, 0.018);
+    const config = DIFFICULTY_CHANCES[difficulty];
+    return Math.min(config.base + Math.max(0, index - 1) * config.step, config.max);
+  }
+
+  function settleRound(title: string, amount: number) {
+    bankedWinnings += amount;
+    saveBankedWinnings(bankedWinnings);
+    updateBalanceFromBank();
+    cashout = formatUsd(bankedWinnings);
+    roundMessage = {
+      title,
+      amount,
+      total: bankedWinnings,
+    };
+    roundMessageAt = performance.now();
+    gameState = 'won';
+    audio.play('win');
+    render();
   }
 
   function resolveLanding() {
@@ -788,32 +919,35 @@ async function boot() {
     landingResolved = true;
 
     if (activeIndex >= PRIZE_INDEX) {
-      gameState = 'won';
-      cashout = '5.25';
-      wonAt = performance.now();
-      render();
+      settleRound('ПОБЕДА!', payoutForIndex(activeIndex));
       return;
     }
 
     if (activeIndex > 0 && Math.random() < roastChance(activeIndex)) {
       gameState = 'burned';
       burnedAt = performance.now();
+      audio.play('lose');
       render();
+      return;
     }
+
+    audio.play('step');
   }
 
   function startRun() {
+    if (roundMessage) return;
+    audio.play('click');
+    audio.startSoundtrack();
     gameState = 'running';
     activeIndex = 0;
-    balanceValue = Math.max(0, balanceValue - STAKE_AMOUNT);
-    balance = formatBalance(balanceValue);
-    cashout = CASHOUT_BASE.toFixed(2);
+    updateBalanceFromBank();
+    updateCashout();
     chickenX = FIRST_PAD_X;
     chickenY = RUN_CHICKEN_Y;
     targetX = chickenX;
     moveProgress = 1;
     burnedAt = 0;
-    wonAt = 0;
+    roundMessageAt = 0;
     landingResolved = true;
     movementSprite = 'go';
     updateCameraTarget();
@@ -821,18 +955,12 @@ async function boot() {
   }
 
   function cashOut() {
-    if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0) return;
-
-    const payout = Number(cashout);
-    if (Number.isFinite(payout)) {
-      balanceValue += payout;
-      balance = formatBalance(balanceValue);
-    }
-
-    resetAtStart();
+    if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || roundMessage) return;
+    settleRound('ПОБЕДА!', roundPayout());
   }
 
   function advance() {
+    if (roundMessage) return;
     if (gameState === 'ready') {
       startRun();
       return;
@@ -841,12 +969,21 @@ async function boot() {
     if (gameState === 'burned' || gameState === 'won' || moveProgress < 1) return;
     if (activeIndex >= PRIZE_INDEX) return;
 
+    audio.play('click');
+    audio.startSoundtrack();
     activeIndex += 1;
-    cashout = (CASHOUT_BASE + activeIndex * CASHOUT_STEP).toFixed(2);
+    updateCashout();
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
     movementSprite = Math.random() < 0.5 ? 'go' : 'jump';
     moveProgress = 0;
     landingResolved = false;
+    render();
+  }
+
+  function setDifficulty(nextDifficulty: Difficulty) {
+    if (difficulty === nextDifficulty || gameState !== 'ready') return;
+    difficulty = nextDifficulty;
+    audio.play('click');
     render();
   }
 
@@ -901,7 +1038,7 @@ async function boot() {
       resetAtStart();
     }
 
-    if (gameState === 'won' && wonAt > 0 && performance.now() - wonAt >= VICTORY_DELAY_MS) {
+    if (roundMessageAt > 0 && performance.now() - roundMessageAt >= ROUND_MESSAGE_DELAY_MS) {
       resetAtStart();
     }
   });

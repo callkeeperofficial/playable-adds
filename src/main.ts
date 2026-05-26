@@ -334,7 +334,9 @@ function drawStage(root: Container): void {
     }
   }
   root.addChild(lines);
+}
 
+function drawFloor(root: Container): void {
   const floor = new Graphics();
   floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 50).fill(0x34394d);
   floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 7).fill(0x1e2439);
@@ -346,31 +348,30 @@ function drawStage(root: Container): void {
   root.addChild(floor);
 }
 
-function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites): void {
+function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites, padPressed = false): void {
   if (decors) {
-    const pad = new Sprite(decors.pad);
-    pad.anchor.set(0.5, 1);
-    pad.position.set(x, FLOOR_Y + 4);
-    pad.scale.set(164 / pad.texture.width);
-    parent.addChild(pad);
-
     const sprite = new Sprite(decors.vent);
     sprite.anchor.set(0.5, 1);
     sprite.position.set(x, FLOOR_Y - 5);
     sprite.scale.set(168 / sprite.texture.height);
     parent.addChild(sprite);
+
+    const pad = new Sprite(decors.pad);
+    pad.anchor.set(0.5, 1);
+    pad.position.set(x, padPressed ? FLOOR_Y + 31 : FLOOR_Y + 4);
+    pad.scale.set(164 / pad.texture.width);
+    parent.addChild(pad);
     return;
   }
 
   const vent = new Graphics();
-  vent.roundRect(x - 82, FLOOR_Y - 12, 164, 18, 7).fill(0x697397);
   vent.roundRect(x - 84, y - 84, 168, 118, 84).fill(0x222945).stroke({ width: 7, color: 0x30385c });
   vent.roundRect(x - 78, y - 76, 156, 110, 78).stroke({ width: 7, color: 0x1b2138 });
   for (let i = -3; i <= 3; i++) {
     const barH = 48 + (4 - Math.abs(i)) * 9;
     vent.roundRect(x + i * 18 - 7, y + 20 - barH, 14, barH, 7).fill(0x151a2f);
   }
-  vent.roundRect(x - 96, y + 32, 192, 17, 7).fill(0x697397);
+  vent.roundRect(x - 96, padPressed ? FLOOR_Y + 15 : y + 32, 192, 17, 7).fill(0x697397);
   parent.addChild(vent);
 }
 
@@ -772,9 +773,8 @@ function drawControls(root: Container, state: GameState, cashout: string, diffic
 function drawRoundMessage(root: Container, viewWidth: number, message: RoundMessage): void {
   const x = viewWidth / 2;
   panel(root, x - 250, 170, 500, 140, 22, 0xffc21b, 0x9f7412, 0.98);
-  addText(root, message.title, x, 214, 46, 0x111829, 0.5, 0.5, '900');
-  addText(root, `Результат: ${formatUsd(message.total)} USD`, x, 260, 31, 0x111829, 0.5, 0.5, '900');
-  addText(root, 'Новый раунд сейчас начнется', x, 294, 20, 0x34301c, 0.5, 0.5, '900');
+  addText(root, message.title, x, 224, 48, 0x111829, 0.5, 0.5, '900');
+  addText(root, `${formatUsd(message.total)} USD`, x, 272, 34, 0x111829, 0.5, 0.5, '900');
 }
 
 async function boot() {
@@ -921,7 +921,11 @@ async function boot() {
       worldLayer.addChild(pad.root);
     }
 
-    for (let i = 0; i < PRIZE_INDEX; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites);
+    for (let i = 0; i < PRIZE_INDEX; i++) {
+      const padPressed = gameState !== 'ready' && i <= activeIndex;
+      drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites, padPressed);
+    }
+    drawFloor(worldLayer);
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
@@ -983,7 +987,7 @@ async function boot() {
     landingResolved = true;
 
     if (activeIndex >= PRIZE_INDEX) {
-      settleRound('ПОБЕДА!', roundCashoutValue());
+      settleRound('WIN!', roundCashoutValue());
       return;
     }
 
@@ -1019,7 +1023,7 @@ async function boot() {
 
   function cashOut() {
     if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || roundMessage) return;
-    settleRound('ПОБЕДА!', roundCashoutValue());
+    settleRound('WIN!', roundCashoutValue());
   }
 
   function advance() {
@@ -1066,8 +1070,8 @@ async function boot() {
       const start = chickenX;
       const eased = 1 - Math.pow(1 - moveProgress, 3);
       chickenX = start + (targetX - start) * eased;
-      chickenY = RUN_CHICKEN_Y - Math.sin(moveProgress * Math.PI) * 72;
-      chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.08;
+      chickenY = RUN_CHICKEN_Y + Math.sin(t * 9) * 2;
+      chicken.rotation = Math.sin(t * 8) * 0.015;
       chicken.position.set(chickenX, chickenY);
       updateChickenFrame(chicken, movementSprite, t);
       if (moveProgress === 1) {

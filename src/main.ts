@@ -17,7 +17,7 @@ type FrameRect = {
 type ChickenAnimationState = 'idle' | 'go' | 'jump' | 'dead';
 type ChickenMoveState = 'go' | 'jump';
 type Difficulty = 'easy' | 'medium' | 'hard' | 'hardcore';
-type SoundKey = 'click' | 'lose' | 'soundtrack' | 'step' | 'win';
+type SoundKey = 'click' | 'lose' | 'step' | 'win';
 type ChickenFrames = {
   idle: Texture[];
   go: Texture[];
@@ -26,13 +26,14 @@ type ChickenFrames = {
 };
 type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padBurned' | 'padPrize';
 type ObjectSprites = Record<ObjectSpriteKey, Texture>;
+type DecorSpriteKey = 'vent' | 'pedestal';
+type DecorSprites = Record<DecorSpriteKey, Texture>;
 type ChickenActor = Container & {
   frames?: ChickenFrames;
   sprite?: Sprite;
 };
 type RoundMessage = {
   title: string;
-  amount: number;
   total: number;
 };
 
@@ -76,11 +77,11 @@ const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
 const AUDIO_URLS: Record<SoundKey, string> = {
   click: `${import.meta.env.BASE_URL}assets/audio/button-click.webm`,
   lose: `${import.meta.env.BASE_URL}assets/audio/lose.webm`,
-  soundtrack: `${import.meta.env.BASE_URL}assets/audio/soundtrack.webm`,
   step: `${import.meta.env.BASE_URL}assets/audio/step.webm`,
   win: `${import.meta.env.BASE_URL}assets/audio/win.webm`,
 };
 const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
+const DECORS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/decors.png`;
 const CHICKEN_SPRITE_SCALE = 0.72;
 const CHICKEN_DEAD_SCALE = 0.5;
 const CHICKEN_CELL = 302;
@@ -100,6 +101,10 @@ const OBJECT_SPRITE_FRAMES: Record<ObjectSpriteKey, FrameRect> = {
   padIdle: { x: 620, y: 750, w: 408, h: 420 },
   padBack: { x: 1018, y: 742, w: 438, h: 480 },
   padBurned: { x: 1470, y: 822, w: 410, h: 430 },
+};
+const DECOR_SPRITE_FRAMES: Record<DecorSpriteKey, FrameRect> = {
+  vent: { x: 198, y: 1012, w: 370, h: 392 },
+  pedestal: { x: 568, y: 1012, w: 282, h: 158 },
 };
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   easy: 'Easy',
@@ -201,8 +206,7 @@ function createAudioController() {
     Object.entries(AUDIO_URLS).map(([key, url]) => {
       const audio = new Audio(url);
       audio.preload = 'auto';
-      audio.volume = key === 'soundtrack' ? 0.26 : 0.72;
-      if (key === 'soundtrack') audio.loop = true;
+      audio.volume = 0.72;
       return [key, audio];
     }),
   ) as Record<SoundKey, HTMLAudioElement>;
@@ -210,16 +214,11 @@ function createAudioController() {
   function play(key: SoundKey): void {
     const audio = sounds[key];
     if (!audio) return;
-    if (key !== 'soundtrack') audio.currentTime = 0;
+    audio.currentTime = 0;
     void audio.play().catch(() => undefined);
   }
 
-  function startSoundtrack(): void {
-    if (!sounds.soundtrack.paused) return;
-    void sounds.soundtrack.play().catch(() => undefined);
-  }
-
-  return { play, startSoundtrack };
+  return { play };
 }
 
 function panel(parent: Container, x: number, y: number, w: number, h: number, r: number, color: number, stroke = 0x000000, alpha = 1): Graphics {
@@ -349,7 +348,16 @@ function drawStage(root: Container): void {
   root.addChild(floor);
 }
 
-function drawVent(parent: Container, x: number, y: number): void {
+function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites): void {
+  if (decors) {
+    const sprite = new Sprite(decors.vent);
+    sprite.anchor.set(0.5, 1);
+    sprite.position.set(x, FLOOR_Y - 5);
+    sprite.scale.set(168 / sprite.texture.height);
+    parent.addChild(sprite);
+    return;
+  }
+
   const vent = new Graphics();
   vent.roundRect(x - 84, y - 84, 168, 118, 84).fill(0x222945).stroke({ width: 7, color: 0x30385c });
   vent.roundRect(x - 78, y - 76, 156, 110, 78).stroke({ width: 7, color: 0x1b2138 });
@@ -370,12 +378,38 @@ function addMarkerSprite(parent: Container, texture: Texture, targetSize: number
   return sprite;
 }
 
-function drawSpritePad(parent: Container, label: string, state: PadState, sprites: ObjectSprites): boolean {
+function drawPrizeDisplay(parent: Container, label: string, objectSprites: ObjectSprites, decors?: DecorSprites): void {
+  const chamber = new Graphics();
+  chamber.roundRect(-122, -190, 244, 546, 118).fill({ color: 0x161a28, alpha: 0.76 });
+  chamber.roundRect(-116, -184, 232, 538, 110).stroke({ width: 8, color: 0x526098, alpha: 0.82 });
+  chamber.circle(0, -10, 124).fill({ color: 0xffdf44, alpha: 0.12 });
+  chamber.rect(-91, 104, 182, 212).fill({ color: 0x0b0e17, alpha: 0.22 });
+  parent.addChild(chamber);
+
+  const egg = addMarkerSprite(parent, objectSprites.padPrize, 210, -10);
+  egg.scale.set(210 / egg.texture.height);
+  addText(parent, label, 0, -10, 43, 0xffffff, 0.5, 0.5, '900', 0x7f5c09, 5);
+
+  if (decors) {
+    const pedestal = new Sprite(decors.pedestal);
+    pedestal.anchor.set(0.5, 1);
+    pedestal.position.set(0, 350);
+    pedestal.scale.set(104 / pedestal.texture.height);
+    parent.addChild(pedestal);
+  } else {
+    const pedestal = new Graphics();
+    pedestal.moveTo(-62, 280).lineTo(62, 280).quadraticCurveTo(45, 332, 26, 348).lineTo(-26, 348).quadraticCurveTo(-45, 332, -62, 280).fill(0xd8d9d2);
+    pedestal.roundRect(-68, 274, 136, 12, 6).fill(0xf0f1eb);
+    parent.addChild(pedestal);
+  }
+}
+
+function drawSpritePad(parent: Container, label: string, state: PadState, sprites: ObjectSprites, decors?: DecorSprites): boolean {
   addMarkerSprite(parent, sprites.padBack, 224, 12);
 
   if (state === 'prize') {
-    addMarkerSprite(parent, sprites.padPrize, 236, -6);
-    addText(parent, `${formatUsd(PRIZE_PAYOUT)} USD`, 0, 96, 26, 0xfff0a8, 0.5, 0.5, '900', 0x3d2b08, 4);
+    parent.removeChildren();
+    drawPrizeDisplay(parent, label, sprites, decors);
     return true;
   }
 
@@ -395,9 +429,9 @@ function drawSpritePad(parent: Container, label: string, state: PadState, sprite
   return true;
 }
 
-function drawPad(parent: Container, label: string, state: PadState, sprites?: ObjectSprites): void {
+function drawPad(parent: Container, label: string, state: PadState, sprites?: ObjectSprites, decors?: DecorSprites): void {
   parent.removeChildren();
-  if (sprites && drawSpritePad(parent, label, state, sprites)) return;
+  if (sprites && drawSpritePad(parent, label, state, sprites, decors)) return;
 
   const color = state === 'active' || state === 'passed' ? 0x25b94a : state === 'dead' || state === 'prize' ? 0xf3c62d : state === 'burned' ? 0xd12f68 : 0x596596;
   const ring = state === 'active' || state === 'passed' ? 0x38ef55 : state === 'dead' || state === 'prize' ? 0xffdf44 : state === 'burned' ? 0xff386f : 0x7480c4;
@@ -433,10 +467,10 @@ function drawPad(parent: Container, label: string, state: PadState, sprites?: Ob
   addText(parent, label, 0, 6, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
 }
 
-function makePad(label: string, x: number, state: PadState, sprites?: ObjectSprites): PadView {
+function makePad(label: string, x: number, state: PadState, sprites?: ObjectSprites, decors?: DecorSprites): PadView {
   const root = new Container();
   root.position.set(x, PAD_Y);
-  drawPad(root, label, state, sprites);
+  drawPad(root, label, state, sprites, decors);
   return { root, state };
 }
 
@@ -459,6 +493,23 @@ async function loadObjectSprites(): Promise<ObjectSprites | undefined> {
         }),
       ]),
     ) as ObjectSprites;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadDecorSprites(): Promise<DecorSprites | undefined> {
+  try {
+    const sheet = await Assets.load<Texture>(DECORS_SPRITE_URL);
+    return Object.fromEntries(
+      Object.entries(DECOR_SPRITE_FRAMES).map(([key, frame]) => [
+        key,
+        new Texture({
+          source: sheet.source,
+          frame: new Rectangle(frame.x, frame.y, frame.w, frame.h),
+        }),
+      ]),
+    ) as DecorSprites;
   } catch {
     return undefined;
   }
@@ -717,8 +768,8 @@ function drawRoundMessage(root: Container, viewWidth: number, message: RoundMess
   const x = viewWidth / 2;
   panel(root, x - 250, 170, 500, 140, 22, 0xffc21b, 0x9f7412, 0.98);
   addText(root, message.title, x, 214, 46, 0x111829, 0.5, 0.5, '900');
-  addText(root, `+${formatUsd(message.amount)} USD`, x, 258, 34, 0x111829, 0.5, 0.5, '900');
-  addText(root, `Накоплено: ${formatUsd(message.total)} USD`, x, 292, 22, 0x34301c, 0.5, 0.5, '900');
+  addText(root, `Результат: ${formatUsd(message.total)} USD`, x, 260, 31, 0x111829, 0.5, 0.5, '900');
+  addText(root, 'Новый раунд сейчас начнется', x, 294, 20, 0x34301c, 0.5, 0.5, '900');
 }
 
 async function boot() {
@@ -760,9 +811,10 @@ async function boot() {
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
   let cameraX = 0;
   let targetCameraX = 0;
-  const [chickenFrames, objectSprites] = await Promise.all([
+  const [chickenFrames, objectSprites, decorSprites] = await Promise.all([
     loadChickenFrames(),
     loadObjectSprites(),
+    loadDecorSprites(),
   ]);
   const chicken = makeChicken(chickenFrames);
 
@@ -798,8 +850,12 @@ async function boot() {
     return activeIndex >= 0 ? payoutForIndex(activeIndex) : 0;
   }
 
+  function roundCashoutValue(): number {
+    return Math.max(bankedWinnings, roundPayout());
+  }
+
   function updateCashout() {
-    cashout = formatUsd(bankedWinnings + roundPayout());
+    cashout = formatUsd(roundCashoutValue());
   }
 
   function viewportSize() {
@@ -851,12 +907,12 @@ async function boot() {
       else if (i === activeIndex) state = 'active';
       if (gameState === 'burned' && i === 0) state = 'dead';
 
-      const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state, objectSprites);
+      const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state, objectSprites, decorSprites);
       pads.push(pad);
       worldLayer.addChild(pad.root);
     }
 
-    for (let i = 0; i < MULTIPLIERS.length; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27);
+    for (let i = 0; i < MULTIPLIERS.length; i++) drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites);
 
     chicken.position.set(chickenX, chickenY);
     chicken.scale.set(0.95);
@@ -898,14 +954,13 @@ async function boot() {
     return Math.min(config.base + Math.max(0, index - 1) * config.step, config.max);
   }
 
-  function settleRound(title: string, amount: number) {
-    bankedWinnings += amount;
+  function settleRound(title: string, nextBankValue: number) {
+    bankedWinnings = Math.max(bankedWinnings, nextBankValue);
     saveBankedWinnings(bankedWinnings);
     updateBalanceFromBank();
     cashout = formatUsd(bankedWinnings);
     roundMessage = {
       title,
-      amount,
       total: bankedWinnings,
     };
     roundMessageAt = performance.now();
@@ -919,7 +974,7 @@ async function boot() {
     landingResolved = true;
 
     if (activeIndex >= PRIZE_INDEX) {
-      settleRound('ПОБЕДА!', payoutForIndex(activeIndex));
+      settleRound('ПОБЕДА!', roundCashoutValue());
       return;
     }
 
@@ -937,7 +992,6 @@ async function boot() {
   function startRun() {
     if (roundMessage) return;
     audio.play('click');
-    audio.startSoundtrack();
     gameState = 'running';
     activeIndex = 0;
     updateBalanceFromBank();
@@ -956,7 +1010,7 @@ async function boot() {
 
   function cashOut() {
     if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || roundMessage) return;
-    settleRound('ПОБЕДА!', roundPayout());
+    settleRound('ПОБЕДА!', roundCashoutValue());
   }
 
   function advance() {
@@ -970,7 +1024,6 @@ async function boot() {
     if (activeIndex >= PRIZE_INDEX) return;
 
     audio.play('click');
-    audio.startSoundtrack();
     activeIndex += 1;
     updateCashout();
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;

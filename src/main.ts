@@ -6,6 +6,10 @@ type FontWeight = 'normal' | 'bold' | '400' | '500' | '600' | '700' | '800' | '9
 type LayoutInfo = {
   scale: number;
   viewWidth: number;
+  worldViewWidth: number;
+  worldScale: number;
+  screenWidth: number;
+  groundLiftY: number;
 };
 type ButtonHandler = () => void;
 type FrameRect = {
@@ -17,6 +21,7 @@ type FrameRect = {
 type ChickenAnimationState = 'idle' | 'go' | 'jump' | 'dead';
 type ChickenMoveState = 'go' | 'jump';
 type Difficulty = 'easy' | 'medium' | 'hard' | 'hardcore';
+type StakeAmount = 2 | 3 | 8 | 20;
 type SoundKey = 'click' | 'lose' | 'step' | 'win';
 type ChickenFrames = {
   idle: Texture[];
@@ -28,9 +33,36 @@ type ObjectSpriteKey = 'padBack' | 'padIdle' | 'padActive' | 'padPassed' | 'padB
 type ObjectSprites = Record<ObjectSpriteKey, Texture>;
 type DecorSpriteKey = 'vent' | 'pedestal' | 'pad';
 type DecorSprites = Record<DecorSpriteKey, Texture>;
+type FireSprites = {
+  mini: Texture[];
+  burn: Texture[];
+};
 type ChickenActor = Container & {
   frames?: ChickenFrames;
   sprite?: Sprite;
+};
+type FireView = {
+  sprite: Sprite;
+  frames: Texture[];
+  fps: number;
+  phase: number;
+  startTime: number;
+  loop: boolean;
+  baseY: number;
+  targetHeight: number;
+  scaleBasis: number;
+  pulse: number;
+  locked: boolean;
+};
+type LiveWin = {
+  name: string;
+  amount: number;
+  avatar: number;
+};
+type MiniFireSlot = {
+  height: number;
+  xOffset: number;
+  phase: number;
 };
 type RoundMessage = {
   title: string;
@@ -58,10 +90,13 @@ const CHICKEN_GROUND_Y = FLOOR_Y + 6;
 const START_CHICKEN_X = 144;
 const START_CHICKEN_Y = CHICKEN_GROUND_Y - 12;
 const RUN_CHICKEN_Y = CHICKEN_GROUND_Y - 18;
-const STARTING_BALANCE = 1000000;
-const STAKE_AMOUNT = 3;
+const PRIZE_CHICKEN_Y = FLOOR_Y - 86;
+const GLOBAL_POOL_AMOUNT = 1000000;
+const STAKE_VALUES = [2, 3, 8, 20] as const;
+const DEFAULT_STAKE_AMOUNT: StakeAmount = 3;
 const MOVE_SPEED = 0.018;
 const MOVE_ANIMATION_FPS = 4;
+const AUTO_ADVANCE_DELAY_MS = 520;
 const REVIVE_DELAY_MS = 1200;
 const ROUND_MESSAGE_DELAY_MS = 1800;
 const BANK_STORAGE_KEY = 'chicken-road-banked-winnings';
@@ -79,6 +114,8 @@ const AUDIO_URLS: Record<SoundKey, string> = {
 };
 const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
 const DECORS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/decors.png`;
+const MINI_FIRE_SPRITE_URL = `${import.meta.env.BASE_URL}assets/mini-fire.png`;
+const BURN_FIRE_FRAME_URLS = Array.from({ length: 6 }, (_, index) => `${import.meta.env.BASE_URL}assets/fire-burn-${index + 1}.png`);
 const CHICKEN_SPRITE_SCALE = 0.72;
 const CHICKEN_DEAD_SCALE = 0.5;
 const CHICKEN_CELL = 302;
@@ -104,6 +141,41 @@ const DECOR_SPRITE_FRAMES: Record<DecorSpriteKey, FrameRect> = {
   pedestal: { x: 568, y: 1012, w: 282, h: 158 },
   pad: { x: 853, y: 1012, w: 433, h: 68 },
 };
+const MINI_FIRE_FRAMES: FrameRect[] = [
+  { x: 701, y: 23, w: 82, h: 93 },
+  { x: 536, y: 341, w: 88, h: 88 },
+  { x: 937, y: 334, w: 85, h: 95 },
+  { x: 552, y: 724, w: 72, h: 126 },
+  { x: 983, y: 514, w: 121, h: 145 },
+  { x: 662, y: 599, w: 122, h: 160 },
+  { x: 977, y: 121, w: 124, h: 165 },
+  { x: 312, y: 268, w: 179, h: 161 },
+  { x: 312, y: 611, w: 165, h: 190 },
+  { x: 0, y: 653, w: 185, h: 194 },
+  { x: 312, y: 268, w: 179, h: 161 },
+  { x: 662, y: 599, w: 122, h: 160 },
+  { x: 983, y: 514, w: 121, h: 145 },
+  { x: 552, y: 724, w: 72, h: 126 },
+  { x: 937, y: 334, w: 85, h: 95 },
+  { x: 536, y: 341, w: 88, h: 88 },
+];
+const MINI_FIRE_CHANCE = 0.32;
+const LIVE_WIN_INTERVAL_MS = 3200;
+const LIVE_WIN_VISIBLE_MS = 2200;
+const COMPACT_CONTROLS_BREAKPOINT = 1000;
+const COMPACT_CONTROLS_GAP = 20;
+const COMPACT_CONTROLS_H = 340;
+const COMPACT_CONTROLS_Y = DESIGN_HEIGHT - COMPACT_CONTROLS_H - COMPACT_CONTROLS_GAP;
+const COMPACT_GROUND_LIFT_Y = 0;
+const COMPACT_WORLD_SCALE = 0.8;
+const LIVE_WIN_MOCKS: LiveWin[] = [
+  { name: 'Moccasin He...', amount: 1108.08, avatar: 0xff6f5d },
+  { name: 'Blue Ideologi...', amount: 244.50, avatar: 0x6fa9ff },
+  { name: 'Plum Balance...', amount: 220.50, avatar: 0xba78ff },
+  { name: 'Tan Superior ...', amount: 420.00, avatar: 0xffc064 },
+  { name: 'Aqua Alleged...', amount: 306.00, avatar: 0x62dbe9 },
+  { name: 'Salmon Delig...', amount: 244.50, avatar: 0xff8b77 },
+];
 const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   easy: 'Easy',
   medium: 'Medium',
@@ -116,12 +188,17 @@ const DIFFICULTY_CHANCES: Record<Difficulty, { base: number; step: number; max: 
   hard: { base: 0.08, step: 0.024, max: 0.34 },
   hardcore: { base: 0.14, step: 0.042, max: 0.58 },
 };
-const MULTIPLIER_VALUES = Array.from({ length: GAME_SETTINGS.padCount }, (_, index) => {
-  const value = GAME_SETTINGS.firstMultiplier + index * GAME_SETTINGS.multiplierGrowth + index * index * 0.003;
-  return value;
-});
-const MULTIPLIERS = MULTIPLIER_VALUES.map((value) => `${value.toFixed(2)}x`);
-const PRIZE_INDEX = MULTIPLIERS.length - 1;
+const DIFFICULTY_MULTIPLIERS: Record<Difficulty, { first: number; growth: number; curve: number }> = {
+  easy: {
+    first: GAME_SETTINGS.firstMultiplier,
+    growth: GAME_SETTINGS.multiplierGrowth,
+    curve: 0.003,
+  },
+  medium: { first: 1.08, growth: 0.09, curve: 0.008 },
+  hard: { first: 1.18, growth: 0.18, curve: 0.02 },
+  hardcore: { first: 1.35, growth: 0.36, curve: 0.06 },
+};
+const PRIZE_INDEX = GAME_SETTINGS.padCount - 1;
 const LEVEL_WIDTH = FIRST_PAD_X + PRIZE_INDEX * PAD_STEP + 360;
 
 type PadView = {
@@ -166,6 +243,13 @@ function addText(parent: Container, value: string, x: number, y: number, size: n
   return item;
 }
 
+function addFittedText(parent: Container, value: string, x: number, y: number, size: number, fill: number | string, maxWidth: number, maxHeight: number, anchorX = 0.5, anchorY = 0.5, weight: FontWeight = '800', stroke = 0x22273d, strokeWidth = 0): Text {
+  const item = addText(parent, value, x, y, size, fill, anchorX, anchorY, weight, stroke, strokeWidth);
+  const scale = Math.min(1, maxWidth / Math.max(1, item.width), maxHeight / Math.max(1, item.height));
+  item.scale.set(scale);
+  return item;
+}
+
 function formatBalance(value: number): string {
   const fixed = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2);
   const [whole, decimal] = fixed.split('.');
@@ -177,8 +261,18 @@ function formatUsd(value: number): string {
   return value.toFixed(2);
 }
 
-function payoutForIndex(index: number, base: number): number {
-  return base * MULTIPLIER_VALUES[Math.max(0, Math.min(index, PRIZE_INDEX))];
+function multiplierValueForIndex(index: number, difficulty: Difficulty): number {
+  const safeIndex = Math.max(0, Math.min(index, PRIZE_INDEX));
+  const config = DIFFICULTY_MULTIPLIERS[difficulty];
+  return config.first + safeIndex * config.growth + safeIndex * safeIndex * config.curve;
+}
+
+function multiplierLabelForIndex(index: number, difficulty: Difficulty): string {
+  return `${multiplierValueForIndex(index, difficulty).toFixed(2)}x`;
+}
+
+function payoutForIndex(index: number, base: number, difficulty: Difficulty): number {
+  return base * multiplierValueForIndex(index, difficulty);
 }
 
 function loadBankedWinnings(): number {
@@ -288,25 +382,31 @@ function drawLivePanel(root: Container): void {
   side.rect(0, TOP_H, SIDE_W, STAGE_H).fill(0x2f354f);
   root.addChild(side);
 
+  const door = new Graphics();
+  door.roundRect(57, 288, 166, 488, 86).fill(0x121522).stroke({ width: 14, color: 0x222947 });
+  door.roundRect(68, 298, 144, 466, 76).stroke({ width: 7, color: 0x343c65 });
+  root.addChild(door);
+}
+
+function drawLiveWinsOverlay(root: Container, liveWin: LiveWin, onlineCount: number): void {
+  const backing = new Graphics();
+  backing.rect(0, TOP_H, SIDE_W, 86).fill({ color: 0x2f354f, alpha: 0.97 });
+  root.addChild(backing);
+
   addText(root, 'Live wins:', 12, 64, 13, 0xbfc6e4, 0, 0.5, '800');
   const dot = new Graphics();
   dot.circle(97, 64, 3.5).fill(0x35e34c);
   root.addChild(dot);
   addText(root, 'Online:', 114, 64, 13, 0xbfc6e4, 0, 0.5, '800');
-  addText(root, '3171', 169, 64, 13, 0xbfc6e4, 0, 0.5, '800');
+  addText(root, String(onlineCount), 169, 64, 13, 0xbfc6e4, 0, 0.5, '800');
 
   const row = new Graphics();
   row.roundRect(10, 84, 210, 30, 6).fill({ color: 0x3c466c, alpha: 0.58 });
-  row.circle(22, 99, 9).fill(0xff6f5d);
+  row.circle(22, 99, 9).fill(liveWin.avatar);
   row.circle(22, 105, 4).fill(0x3457d1);
   root.addChild(row);
-  addText(root, 'Moccasin He...', 39, 99, 13, 0xffffff, 0, 0.5, '800');
-  addText(root, '+$1108.08', 145, 99, 13, 0x35ff72, 0, 0.5, '900');
-
-  const door = new Graphics();
-  door.roundRect(57, 288, 166, 488, 86).fill(0x121522).stroke({ width: 14, color: 0x222947 });
-  door.roundRect(68, 298, 144, 466, 76).stroke({ width: 7, color: 0x343c65 });
-  root.addChild(door);
+  addText(root, liveWin.name, 39, 99, 13, 0xffffff, 0, 0.5, '800');
+  addText(root, `+$${formatUsd(liveWin.amount)}`, 145, 99, 13, 0x35ff72, 0, 0.5, '900');
 }
 
 function drawStage(root: Container): void {
@@ -336,42 +436,45 @@ function drawStage(root: Container): void {
   root.addChild(lines);
 }
 
-function drawFloor(root: Container): void {
+function drawFloor(root: Container, liftY = 0): void {
+  const floorY = FLOOR_Y - liftY;
   const floor = new Graphics();
-  floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 50).fill(0x34394d);
-  floor.rect(0, FLOOR_Y, LEVEL_WIDTH, 7).fill(0x1e2439);
+  floor.rect(0, floorY, LEVEL_WIDTH, 50).fill(0x34394d);
+  floor.rect(0, floorY, LEVEL_WIDTH, 7).fill(0x1e2439);
   for (let x = 0; x < LEVEL_WIDTH; x += 282) {
-    floor.rect(x, FLOOR_Y + 8, 282, 42).fill((x / 282) % 2 ? 0x3a3e52 : 0x303548);
-    floor.rect(x + 281, FLOOR_Y + 8, 1, 42).fill(0x242a3d);
+    floor.rect(x, floorY + 8, 282, 42).fill((x / 282) % 2 ? 0x3a3e52 : 0x303548);
+    floor.rect(x + 281, floorY + 8, 1, 42).fill(0x242a3d);
   }
-  floor.rect(0, FLOOR_Y + 50, LEVEL_WIDTH, 9).fill(0x111523);
+  floor.rect(0, floorY + 50, LEVEL_WIDTH, 9).fill(0x111523);
   root.addChild(floor);
 }
 
-function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites, padPressed = false): void {
+function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites, padPressed = false, liftY = 0): void {
+  const floorY = FLOOR_Y - liftY;
+  const ventY = y - liftY;
   if (decors) {
     const sprite = new Sprite(decors.vent);
     sprite.anchor.set(0.5, 1);
-    sprite.position.set(x, FLOOR_Y - 5);
+    sprite.position.set(x, floorY - 5);
     sprite.scale.set(168 / sprite.texture.height);
     parent.addChild(sprite);
 
     const pad = new Sprite(decors.pad);
     pad.anchor.set(0.5, 1);
-    pad.position.set(x, padPressed ? FLOOR_Y + 31 : FLOOR_Y + 4);
+    pad.position.set(x, padPressed ? floorY + 31 : floorY + 4);
     pad.scale.set(164 / pad.texture.width);
     parent.addChild(pad);
     return;
   }
 
   const vent = new Graphics();
-  vent.roundRect(x - 84, y - 84, 168, 118, 84).fill(0x222945).stroke({ width: 7, color: 0x30385c });
-  vent.roundRect(x - 78, y - 76, 156, 110, 78).stroke({ width: 7, color: 0x1b2138 });
+  vent.roundRect(x - 84, ventY - 84, 168, 118, 84).fill(0x222945).stroke({ width: 7, color: 0x30385c });
+  vent.roundRect(x - 78, ventY - 76, 156, 110, 78).stroke({ width: 7, color: 0x1b2138 });
   for (let i = -3; i <= 3; i++) {
     const barH = 48 + (4 - Math.abs(i)) * 9;
-    vent.roundRect(x + i * 18 - 7, y + 20 - barH, 14, barH, 7).fill(0x151a2f);
+    vent.roundRect(x + i * 18 - 7, ventY + 20 - barH, 14, barH, 7).fill(0x151a2f);
   }
-  vent.roundRect(x - 96, padPressed ? FLOOR_Y + 15 : y + 32, 192, 17, 7).fill(0x697397);
+  vent.roundRect(x - 96, padPressed ? floorY + 15 : ventY + 32, 192, 17, 7).fill(0x697397);
   parent.addChild(vent);
 }
 
@@ -521,6 +624,22 @@ async function loadDecorSprites(): Promise<DecorSprites | undefined> {
   }
 }
 
+async function loadFireSprites(): Promise<FireSprites | undefined> {
+  try {
+    const [miniSheet, ...burnFrames] = await Promise.all([
+      Assets.load<Texture>(MINI_FIRE_SPRITE_URL),
+      ...BURN_FIRE_FRAME_URLS.map((url) => Assets.load<Texture>(url)),
+    ]);
+
+    return {
+      mini: makeSpriteFrames(miniSheet, MINI_FIRE_FRAMES),
+      burn: burnFrames,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadChickenFrames(): Promise<ChickenFrames | undefined> {
   try {
     const [idleSheet, goSheet, jumpSheet, deadSheet] = await Promise.all([
@@ -580,19 +699,66 @@ function updateChickenFrame(chicken: ChickenActor, state: ChickenAnimationState,
   const frames = chicken.frames[state];
   const fps = state === 'idle' ? 12 : state === 'dead' ? 1 : MOVE_ANIMATION_FPS;
   const frameIndex = state === 'dead' ? 0 : Math.floor(time * fps) % frames.length;
-  const breath = state === 'idle' ? Math.sin(time * 4.5) * 0.012 : 0;
   const scale = state === 'dead' ? CHICKEN_DEAD_SCALE : CHICKEN_SPRITE_SCALE;
 
   chicken.sprite.texture = frames[frameIndex];
   chicken.sprite.anchor.set(0.5, state === 'dead' ? 0.9 : 0.86);
-  chicken.sprite.scale.set(
-    scale * (1 + breath),
-    scale * (1 - breath * 0.45),
-  );
-  chicken.sprite.y = state === 'idle' ? Math.sin(time * 4.5) * -1.2 : 0;
+  chicken.sprite.scale.set(scale);
+  chicken.sprite.y = 0;
 }
 
-function drawFlame(parent: Container, x: number, y: number, scale: number): Container {
+function drawFireAnimation(parent: Container, frames: Texture[], x: number, y: number, targetHeight: number, fps: number, phase = Math.random() * 10, pulse = 0.04, loop = true, startTime = 0, locked = false): FireView {
+  const sprite = new Sprite(frames[0]);
+  const scaleBasis = Math.max(...frames.map((frame) => frame.height));
+  sprite.anchor.set(0.5, 1);
+  sprite.position.set(x, y);
+  sprite.scale.set(targetHeight / scaleBasis);
+  parent.addChild(sprite);
+
+  return {
+    sprite,
+    frames,
+    fps,
+    phase,
+    startTime,
+    loop,
+    baseY: y,
+    targetHeight,
+    scaleBasis,
+    pulse,
+    locked,
+  };
+}
+
+function updateFireAnimation(view: FireView, time: number): void {
+  const animationTime = view.loop ? time + view.phase : Math.max(0, time - view.startTime);
+  const frameIndex = view.loop
+    ? Math.floor(animationTime * view.fps) % view.frames.length
+    : Math.min(view.frames.length - 1, Math.floor(animationTime * view.fps));
+  const texture = view.frames[frameIndex];
+  const pulseTime = time + view.phase;
+  const pulse = view.locked ? 1 : 1 + Math.sin(pulseTime * 7) * view.pulse;
+  view.sprite.texture = texture;
+  view.sprite.scale.set((view.targetHeight / view.scaleBasis) * pulse);
+  view.sprite.y = view.locked ? view.baseY : view.baseY + Math.sin(pulseTime * 5) * view.targetHeight * 0.025;
+}
+
+function createMiniFireSlots(): (MiniFireSlot | undefined)[] {
+  return Array.from({ length: PRIZE_INDEX }, () => {
+    if (Math.random() >= MINI_FIRE_CHANCE) return undefined;
+    return {
+      height: 78 + Math.random() * 34,
+      xOffset: -12 + Math.random() * 24,
+      phase: Math.random() * 10,
+    };
+  });
+}
+
+function drawMiniFire(parent: Container, frames: Texture[], x: number, y: number, slot: MiniFireSlot): FireView {
+  return drawFireAnimation(parent, frames, x + slot.xOffset, y, slot.height, 7, slot.phase, 0, true, 0, true);
+}
+
+function drawFallbackFlame(parent: Container, x: number, y: number, scale: number): Container {
   const flame = new Container();
   flame.position.set(x, y);
   flame.scale.set(scale);
@@ -606,41 +772,57 @@ function drawFlame(parent: Container, x: number, y: number, scale: number): Cont
   return flame;
 }
 
-function drawWagerSelector(parent: Container, x: number, y: number, w: number, h: number): void {
-  panel(parent, x, y, w, h, 10, 0x4d5269, 0x3b4057);
+function drawWagerSelector(parent: Container, x: number, y: number, w: number, h: number, stake: StakeAmount, enabled: boolean, onMin: ButtonHandler, onMax: ButtonHandler): void {
+  const baseColor = enabled ? 0x4d5269 : 0x3f4357;
+  const buttonColor = enabled ? 0x62687e : 0x4c5064;
+  const textColor = enabled ? 0xffffff : 0x8d91a1;
+  const mutedTextColor = enabled ? 0xd7dae5 : 0x838798;
+  panel(parent, x, y, w, h, 15, baseColor, 0x3b4057);
 
-  const buttonW = Math.max(62, Math.min(112, w * 0.18));
-  const buttonH = Math.max(30, h - 16);
-  const buttonY = y + (h - buttonH) / 2;
-  const fontSize = buttonW < 82 ? 18 : 24;
+  const insetX = Math.max(22, Math.min(30, w * 0.07));
+  const buttonW = Math.max(74, Math.min(112, w * 0.2));
+  const verticalInset = h < 58 ? 6 : 14;
+  const buttonH = Math.max(30, h - verticalInset * 2);
+  const buttonY = y + verticalInset;
+  const fontSize = Math.max(22, Math.min(35, buttonH * 0.58));
 
-  panel(parent, x + 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
-  addText(parent, 'MIN', x + 16 + buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
-  addText(parent, String(STAKE_AMOUNT), x + w / 2, y + h / 2, h < 52 ? 24 : 28, 0xc9ccd5, 0.5, 0.5, '900');
+  const minButton = panel(parent, x + insetX, buttonY, buttonW, buttonH, 8, buttonColor, buttonColor);
+  if (enabled) bindButton(minButton, x + insetX, buttonY, buttonW, buttonH, onMin);
+  addText(parent, 'MIN', x + insetX + buttonW / 2, y + h / 2, fontSize, mutedTextColor, 0.5, 0.5, '900');
 
-  panel(parent, x + w - buttonW - 16, buttonY, buttonW, buttonH, 7, 0x5a6076, 0x5a6076);
-  addText(parent, 'MAX', x + w - 16 - buttonW / 2, y + h / 2, fontSize, 0xb8bbc7, 0.5, 0.5, '900');
+  addText(parent, String(stake), x + w / 2, y + h / 2, Math.max(30, Math.min(44, h * 0.52)), textColor, 0.5, 0.5, '900');
+
+  const maxX = x + w - insetX - buttonW;
+  const maxButton = panel(parent, maxX, buttonY, buttonW, buttonH, 8, buttonColor, buttonColor);
+  if (enabled) bindButton(maxButton, maxX, buttonY, buttonW, buttonH, onMax);
+  addText(parent, 'MAX', maxX + buttonW / 2, y + h / 2, fontSize, mutedTextColor, 0.5, 0.5, '900');
 }
 
-function drawStakeButton(parent: Container, amount: string, x: number, y: number, w: number, h: number): void {
-  panel(parent, x, y, w, h, 11, 0x52576e, 0x3b4057);
-  const coinR = Math.max(10, Math.min(17, h * 0.28));
-  const fontSize = w < 92 ? 19 : 24;
-  const amountOffset = amount.length > 1 ? coinR + 12 : coinR + 8;
-  addText(parent, amount, x + w / 2 - amountOffset / 2, y + h / 2, fontSize, 0xcfd2dc, 0.5, 0.5, '900');
+function drawStakeButton(parent: Container, amount: StakeAmount, isActive: boolean, enabled: boolean, x: number, y: number, w: number, h: number, onStake: (stake: StakeAmount) => void): void {
+  const color = enabled ? (isActive ? 0x60667c : 0x50566d) : 0x42465a;
+  const stroke = enabled && isActive ? 0x7a829d : 0x3b4057;
+  const button = panel(parent, x, y, w, h, 13, color, stroke);
+  if (enabled) bindButton(button, x, y, w, h, () => onStake(amount));
+
+  const coinR = Math.max(8, Math.min(13, h * 0.22));
+  const fontSize = Math.max(23, Math.min(38, h * 0.54));
+  const amountOffset = String(amount).length > 1 ? coinR + 14 : coinR + 11;
+  const textColor = enabled ? 0xffffff : 0x9296a7;
+  const coinColor = enabled ? 0xf3f4fb : 0x9fa3b2;
+  addText(parent, String(amount), x + w / 2 - amountOffset / 2, y + h / 2, fontSize, textColor, 0.5, 0.5, '900');
 
   const coin = new Graphics();
-  coin.circle(x + w / 2 + amountOffset / 2, y + h / 2, coinR).fill(0xcfd2dc);
+  coin.circle(x + w / 2 + amountOffset / 2, y + h / 2, coinR).fill(coinColor);
   parent.addChild(coin);
-  addText(parent, '$', x + w / 2 + amountOffset / 2, y + h / 2, Math.max(15, fontSize - 5), 0x52576e, 0.5, 0.5, '900');
+  addText(parent, '$', x + w / 2 + amountOffset / 2, y + h / 2, Math.max(14, fontSize - 11), 0x52576e, 0.5, 0.5, '900');
 }
 
-function drawStakeRow(parent: Container, x: number, y: number, w: number, h: number): void {
-  const stakes = ['2', '3', '8', '20'];
-  const gap = Math.max(10, Math.min(28, w * 0.025));
+function drawStakeRow(parent: Container, x: number, y: number, w: number, h: number, selectedStake: StakeAmount, enabled: boolean, onStake: (stake: StakeAmount) => void): void {
+  const gap = Math.max(20, Math.min(38, w * 0.05));
   const buttonW = (w - gap * 3) / 4;
-  for (let i = 0; i < stakes.length; i++) {
-    drawStakeButton(parent, stakes[i], x + i * (buttonW + gap), y, buttonW, h);
+  for (let i = 0; i < STAKE_VALUES.length; i++) {
+    const stake = STAKE_VALUES[i];
+    drawStakeButton(parent, stake, stake === selectedStake, enabled, x + i * (buttonW + gap), y, buttonW, h, onStake);
   }
 }
 
@@ -654,36 +836,85 @@ function bindButton(button: Graphics, x: number, y: number, w: number, h: number
 function drawGoButton(parent: Container, label: string, x: number, y: number, w: number, h: number, onGo: ButtonHandler): void {
   const button = panel(parent, x, y, w, h, 18, 0x39c85a, 0x39c85a);
   bindButton(button, x, y, w, h, onGo);
-  addText(parent, label, x + w / 2, y + h / 2, Math.min(46, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+  addFittedText(parent, label, x + w / 2, y + h / 2, Math.min(46, Math.max(30, h * 0.54)), 0xffffff, w - 28, h - 18, 0.5, 0.5, '900');
 }
 
-function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean, onGo: ButtonHandler, onCashOut: ButtonHandler): void {
+function drawArcLine(g: Graphics, cx: number, cy: number, r: number, start: number, end: number): void {
+  const steps = 18;
+  for (let i = 0; i <= steps; i++) {
+    const t = start + (end - start) * (i / steps);
+    const px = cx + Math.cos(t) * r;
+    const py = cy + Math.sin(t) * r;
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+}
+
+function drawAutoRunButton(parent: Container, x: number, y: number, w: number, h: number, onAutoRun: ButtonHandler): void {
+  const button = panel(parent, x, y, w, h, 18, 0x555b70, 0x555b70);
+  bindButton(button, x, y, w, h, onAutoRun);
+
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const r = Math.min(w, h) * 0.2;
+  const arrow = Math.max(8, r * 0.34);
+  const icon = new Graphics();
+
+  drawArcLine(icon, cx, cy, r, Math.PI * 1.16, Math.PI * 1.86);
+  drawArcLine(icon, cx, cy, r, Math.PI * 0.16, Math.PI * 0.86);
+  icon.stroke({ width: Math.max(4, r * 0.13), color: 0xffffff, alpha: 0.96 });
+
+  icon.moveTo(cx - r - arrow * 0.55, cy + arrow * 0.12)
+    .lineTo(cx - r + arrow * 0.9, cy - arrow * 0.9)
+    .lineTo(cx - r + arrow * 0.9, cy + arrow * 0.88)
+    .fill(0xffffff);
+  icon.moveTo(cx + r + arrow * 0.55, cy - arrow * 0.12)
+    .lineTo(cx + r - arrow * 0.9, cy + arrow * 0.9)
+    .lineTo(cx + r - arrow * 0.9, cy - arrow * 0.88)
+    .fill(0xffffff);
+  icon.moveTo(cx - r * 0.16, cy - r * 0.38)
+    .lineTo(cx - r * 0.16, cy + r * 0.38)
+    .lineTo(cx + r * 0.48, cy)
+    .fill(0xffffff);
+
+  parent.addChild(icon);
+}
+
+function drawActions(parent: Container, state: GameState, cashout: string, x: number, y: number, w: number, h: number, gap: number, showCashout: boolean, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler): void {
   const goColor = state === 'burned' ? 0x3b9657 : 0x39c85a;
   const readyLabel = state === 'ready' ? 'Play' : 'GO';
 
   if (!showCashout) {
-    const button = panel(parent, x, y, w, h, 18, goColor, goColor);
-    bindButton(button, x, y, w, h, onGo);
-    addText(parent, readyLabel, x + w / 2, y + h / 2, Math.min(45, Math.max(34, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+    if (state === 'ready') {
+      const autoW = Math.min(h, Math.max(64, Math.min(132, w * 0.24)));
+      const actionGap = Math.max(16, Math.min(gap, w * 0.08));
+      const playW = Math.max(92, w - autoW - actionGap);
+      drawAutoRunButton(parent, x, y, autoW, h, onAutoRun);
+      drawGoButton(parent, readyLabel, x + autoW + actionGap, y, playW, h, onGo);
+      return;
+    }
+
+    drawGoButton(parent, readyLabel, x, y, w, h, onGo);
     return;
   }
 
   const actionW = (w - gap) / 2;
   const cashButton = panel(parent, x, y, actionW, h, 18, 0xffc21b, 0xffc21b);
   if (state === 'running') bindButton(cashButton, x, y, actionW, h, onCashOut);
-  const cashFont = actionW < 260 ? 27 : 34;
-  addText(parent, 'CASH OUT', x + actionW / 2, y + h * 0.38, cashFont, 0x111829, 0.5, 0.5, '900');
-  addText(parent, `${cashout} USD`, x + actionW / 2, y + h * 0.66, Math.max(26, cashFont - 1), 0x111829, 0.5, 0.5, '900');
+  const cashTitleFont = Math.min(34, Math.max(18, Math.min(actionW * 0.15, h * 0.3)));
+  const cashValueFont = Math.min(32, Math.max(17, Math.min(actionW * 0.13, h * 0.26)));
+  addFittedText(parent, 'CASH OUT', x + actionW / 2, y + h * 0.38, cashTitleFont, 0x111829, actionW - 24, h * 0.34, 0.5, 0.5, '900');
+  addFittedText(parent, `${cashout} USD`, x + actionW / 2, y + h * 0.66, cashValueFont, 0x111829, actionW - 24, h * 0.3, 0.5, 0.5, '900');
 
   const goX = x + actionW + gap;
   const goButton = panel(parent, goX, y, actionW, h, 18, goColor, goColor);
   bindButton(goButton, goX, y, actionW, h, onGo);
-  addText(parent, 'GO', goX + actionW / 2, y + h / 2, Math.min(46, Math.max(36, h * 0.54)), 0xffffff, 0.5, 0.5, '900');
+  addFittedText(parent, 'GO', goX + actionW / 2, y + h / 2, Math.min(46, Math.max(30, h * 0.54)), 0xffffff, actionW - 24, h - 18, 0.5, 0.5, '900');
 }
 
-function drawDifficultyStrip(parent: Container, difficulty: Difficulty, x: number, y: number, w: number, onDifficulty: (difficulty: Difficulty) => void): void {
-  addText(parent, 'Difficulty', x, y, 25, 0xffffff, 0, 0.5, '700');
-  panel(parent, x, y + 58, w, 56, 9, 0x4d5268, 0x383d54);
+function drawDifficultyStrip(parent: Container, difficulty: Difficulty, enabled: boolean, x: number, y: number, w: number, onDifficulty: (difficulty: Difficulty) => void): void {
+  addText(parent, 'Difficulty', x, y, 25, enabled ? 0xffffff : 0x9ca0ae, 0, 0.5, '700');
+  panel(parent, x, y + 58, w, 56, 9, enabled ? 0x4d5268 : 0x414559, 0x383d54);
 
   const difficulties: Difficulty[] = ['easy', 'medium', 'hard', 'hardcore'];
   const segmentW = w / difficulties.length;
@@ -691,83 +922,112 @@ function drawDifficultyStrip(parent: Container, difficulty: Difficulty, x: numbe
     const item = difficulties[i];
     const isActive = item === difficulty;
     const segmentX = x + segmentW * i;
-    const hit = new Graphics();
-    hit.rect(segmentX, y + 58, segmentW, 56).fill({ color: 0xffffff, alpha: 0.001 });
-    bindButton(hit, segmentX, y + 58, segmentW, 56, () => onDifficulty(item));
-    parent.addChild(hit);
-    if (isActive) panel(parent, segmentX + 7, y + 65, segmentW - 14, 42, 9, 0x6b7085, 0x6b7085);
-    addText(parent, DIFFICULTY_LABELS[item], segmentX + segmentW / 2, y + 86, 22, isActive ? 0xffffff : 0xa8abb8, 0.5, 0.5, '800');
+    if (enabled) {
+      const hit = new Graphics();
+      hit.rect(segmentX, y + 58, segmentW, 56).fill({ color: 0xffffff, alpha: 0.001 });
+      bindButton(hit, segmentX, y + 58, segmentW, 56, () => onDifficulty(item));
+      parent.addChild(hit);
+    }
+    if (isActive) panel(parent, segmentX + 7, y + 65, segmentW - 14, 42, 9, enabled ? 0x6b7085 : 0x55596d, enabled ? 0x6b7085 : 0x55596d);
+    addText(parent, DIFFICULTY_LABELS[item], segmentX + segmentW / 2, y + 86, 22, enabled ? (isActive ? 0xffffff : 0xa8abb8) : 0x858998, 0.5, 0.5, '800');
   }
 }
 
-function drawMinimalControls(root: Container, state: GameState, cardX: number, cardY: number, cardWidth: number, cardHeight: number, onGo: ButtonHandler): void {
-  const inset = 18;
-  const actionY = cardY + 36;
-  const actionH = cardHeight - 72;
-  drawGoButton(root, state === 'ready' ? 'Play' : 'GO', cardX + inset, actionY, Math.max(150, cardWidth - inset * 2), actionH, onGo);
+function drawCompactDifficulty(parent: Container, difficulty: Difficulty, enabled: boolean, x: number, y: number, w: number, h: number, onDifficulty: (difficulty: Difficulty) => void): void {
+  const color = enabled ? 0x555b70 : 0x42465a;
+  const textColor = enabled ? 0xffffff : 0x8d91a1;
+  const button = panel(parent, x, y, w, h, 13, color, 0x3b4057);
+  if (enabled) {
+    const difficulties: Difficulty[] = ['easy', 'medium', 'hard', 'hardcore'];
+    const currentIndex = difficulties.indexOf(difficulty);
+    const nextDifficulty = difficulties[(currentIndex + 1) % difficulties.length];
+    bindButton(button, x, y, w, h, () => onDifficulty(nextDifficulty));
+  }
+
+  addFittedText(parent, DIFFICULTY_LABELS[difficulty], x + 38, y + h / 2, Math.min(31, Math.max(22, h * 0.43)), textColor, w - 104, h - 14, 0, 0.5, '900');
+
+  const arrow = new Graphics();
+  const cx = x + w - 42;
+  const cy = y + h / 2 + 1;
+  const size = Math.max(10, Math.min(18, h * 0.22));
+  arrow.moveTo(cx - size, cy - size * 0.45)
+    .lineTo(cx, cy + size * 0.55)
+    .lineTo(cx + size, cy - size * 0.45)
+    .stroke({ width: Math.max(4, size * 0.28), color: textColor, alpha: enabled ? 1 : 0.65 });
+  parent.addChild(arrow);
 }
 
-function drawStackedControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
-  const padX = w < 720 ? 22 : 32;
+function drawCompactControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
+  const padX = Math.max(18, Math.min(32, w * 0.04));
   const contentX = x + padX;
   const contentW = w - padX * 2;
-  const selectorY = y + 24;
-  const stakeY = selectorY + 54;
-  const actionY = stakeY + 62;
-  const actionH = Math.max(56, y + h - actionY - 22);
+  const topPad = Math.max(14, Math.min(20, h * 0.06));
+  const bottomPad = Math.max(14, Math.min(20, h * 0.06));
+  const selectorH = Math.max(44, Math.min(54, h * 0.16));
+  const stakeGap = Math.max(12, Math.min(18, h * 0.05));
+  const stakeH = Math.max(46, Math.min(56, h * 0.16));
+  const difficultyGap = Math.max(14, Math.min(20, h * 0.055));
+  const difficultyH = Math.max(52, Math.min(62, h * 0.18));
+  const actionGap = Math.max(18, Math.min(24, h * 0.065));
+  const selectorY = y + topPad;
+  const stakeY = selectorY + selectorH + stakeGap;
+  const difficultyY = stakeY + stakeH + difficultyGap;
+  const actionY = difficultyY + difficultyH + actionGap;
+  const actionH = Math.max(58, y + h - actionY - bottomPad);
+  const stakeEnabled = state === 'ready';
 
-  drawWagerSelector(root, contentX, selectorY, contentW, 42);
-  drawStakeRow(root, contentX, stakeY, contentW, 44);
-  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(16, Math.min(28, contentW * 0.035)), state !== 'ready' && contentW >= 430, onGo, onCashOut);
+  drawWagerSelector(root, contentX, selectorY, contentW, selectorH, stake, stakeEnabled, () => onStake(STAKE_VALUES[0]), () => onStake(STAKE_VALUES[STAKE_VALUES.length - 1]));
+  drawStakeRow(root, contentX, stakeY, contentW, stakeH, stake, stakeEnabled, onStake);
+  drawCompactDifficulty(root, difficulty, stakeEnabled, contentX, difficultyY, contentW, difficultyH, onDifficulty);
+  drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(14, Math.min(28, contentW * 0.04)), state !== 'ready', onGo, onAutoRun, onCashOut);
 }
 
-function drawWideControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, x: number, y: number, w: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
+function drawWideControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, x: number, y: number, w: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
   const contentX = x + 28;
-  const contentY = y + 24;
+  const contentY = y + 22;
   const contentW = w - 56;
   const actionsW = Math.max(470, Math.min(560, contentW * 0.32));
   const actionsGap = 32;
   const actionsX = contentX + contentW - actionsW;
-  const betW = 400;
-  const midX = contentX + betW + 34;
+  const betW = 348;
+  const midX = contentX + betW + 40;
   const midW = actionsX - midX - 34;
+  const stakeEnabled = state === 'ready';
+  const difficultyEnabled = state === 'ready';
 
-  drawWagerSelector(root, contentX, contentY, betW, 68);
-  drawStakeRow(root, contentX, contentY + 96, betW, 58);
+  drawWagerSelector(root, contentX, contentY, betW, 68, stake, stakeEnabled, () => onStake(STAKE_VALUES[0]), () => onStake(STAKE_VALUES[STAKE_VALUES.length - 1]));
+  drawStakeRow(root, contentX, contentY + 100, betW, 54, stake, stakeEnabled, onStake);
 
   if (midW >= 480) {
-    drawDifficultyStrip(root, difficulty, midX, contentY + 10, midW, onDifficulty);
-    addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, 0xc3c6d1, 0.5, 0.5, '500');
+    drawDifficultyStrip(root, difficulty, difficultyEnabled, midX, contentY + 10, midW, onDifficulty);
+    addText(root, 'Chance of collision', Math.min(actionsX - 34, midX + midW * 0.74), contentY + 24, 25, difficultyEnabled ? 0xc3c6d1 : 0x858998, 0.5, 0.5, '500');
   }
 
-  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 146, actionsGap, state !== 'ready', onGo, onCashOut);
+  drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 142, actionsGap, state !== 'ready', onGo, onAutoRun, onCashOut);
 }
 
-function drawControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, viewWidth: number, onGo: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void): void {
+function drawControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, viewWidth: number, screenWidth: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
+  const isCompact = screenWidth < COMPACT_CONTROLS_BREAKPOINT;
+  const compactCardY = COMPACT_CONTROLS_Y;
+  const bottomY = isCompact ? Math.min(BOTTOM_Y, compactCardY - COMPACT_CONTROLS_GAP) : BOTTOM_Y;
   const bottom = new Graphics();
-  bottom.rect(0, BOTTOM_Y, viewWidth, DESIGN_HEIGHT - BOTTOM_Y).fill(0x121522);
+  bottom.rect(0, bottomY, viewWidth, DESIGN_HEIGHT - bottomY).fill(0x121522);
   root.addChild(bottom);
 
-  const margin = Math.max(24, Math.min(58, viewWidth * 0.028));
+  const margin = isCompact ? Math.max(20, Math.min(80, viewWidth * 0.085)) : Math.max(24, Math.min(58, viewWidth * 0.028));
   const cardX = margin;
   const cardWidth = Math.max(0, viewWidth - margin * 2);
-  const isWide = cardWidth >= 1320;
-  const cardY = isWide ? 814 : 782;
-  const cardHeight = isWide ? 198 : 232;
+  const cardY = isCompact ? compactCardY : 814;
+  const cardHeight = isCompact ? COMPACT_CONTROLS_H : 198;
 
   panel(root, cardX, cardY, cardWidth, cardHeight, 26, 0x43485d, 0x61735f, 0.96);
 
-  if (cardWidth < 390) {
-    drawMinimalControls(root, state, cardX, cardY, cardWidth, cardHeight, onGo);
+  if (isCompact) {
+    drawCompactControls(root, state, cashout, difficulty, stake, cardX, cardY, cardWidth, cardHeight, onGo, onAutoRun, onCashOut, onDifficulty, onStake);
     return;
   }
 
-  if (isWide) {
-    drawWideControls(root, state, cashout, difficulty, cardX, cardY, cardWidth, onGo, onCashOut, onDifficulty);
-    return;
-  }
-
-  drawStackedControls(root, state, cashout, difficulty, cardX, cardY, cardWidth, cardHeight, onGo, onCashOut, onDifficulty);
+  drawWideControls(root, state, cashout, difficulty, stake, cardX, cardY, cardWidth, onGo, onAutoRun, onCashOut, onDifficulty, onStake);
 }
 
 function drawRoundMessage(root: Container, viewWidth: number, message: RoundMessage): void {
@@ -798,33 +1058,49 @@ async function boot() {
   let gameState: GameState = 'ready';
   let activeIndex = -1;
   let bankedWinnings = loadBankedWinnings();
-  let balanceValue = STARTING_BALANCE + bankedWinnings;
-  let balance = formatBalance(balanceValue);
-  let cashout = formatUsd(bankedWinnings);
+  let stakeAmount: StakeAmount = DEFAULT_STAKE_AMOUNT;
+  let cashout = formatUsd(stakeAmount);
+  let balance = formatBalance(Math.max(0, GLOBAL_POOL_AMOUNT - bankedWinnings));
   let difficulty: Difficulty = 'easy';
   let chickenX = START_CHICKEN_X;
   let chickenY = START_CHICKEN_Y;
+  let moveStartX = chickenX;
+  let moveStartY = chickenY;
   let targetX = chickenX;
+  let targetY = chickenY;
   let moveProgress = 1;
   let burnedAt = 0;
+  let autoRun = false;
+  let autoAdvanceAt = 0;
   let roundMessageAt = 0;
   let roundMessage: RoundMessage | undefined;
   let landingResolved = true;
   let movementSprite: ChickenMoveState = 'go';
-  let flame: Container | undefined;
+  let burnFlame: FireView | undefined;
+  let fallbackFlame: Container | undefined;
+  let miniFires: FireView[] = [];
+  let miniFireSlots = createMiniFireSlots();
+  let liveWinIndex = 0;
+  let liveWin = LIVE_WIN_MOCKS[liveWinIndex];
+  let liveOnlineCount = 3171;
+  const initialNow = performance.now();
+  let liveWinVisible = true;
+  let liveWinVisibleUntil = initialNow + LIVE_WIN_VISIBLE_MS;
+  let nextLiveWinAt = initialNow + LIVE_WIN_INTERVAL_MS;
   let pads: PadView[] = [];
-  let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH };
+  let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH, worldViewWidth: DESIGN_WIDTH, worldScale: 1, screenWidth: DESIGN_WIDTH, groundLiftY: 0 };
   let cameraX = 0;
   let targetCameraX = 0;
-  const [chickenFrames, objectSprites, decorSprites] = await Promise.all([
+  const [chickenFrames, objectSprites, decorSprites, fireSprites] = await Promise.all([
     loadChickenFrames(),
     loadObjectSprites(),
     loadDecorSprites(),
+    loadFireSprites(),
   ]);
   const chicken = makeChicken(chickenFrames);
 
   function clampCamera(value: number) {
-    return Math.max(0, Math.min(value, Math.max(0, LEVEL_WIDTH - layoutInfo.viewWidth)));
+    return Math.max(0, Math.min(value, Math.max(0, LEVEL_WIDTH - layoutInfo.worldViewWidth)));
   }
 
   function updateCameraTarget() {
@@ -833,11 +1109,11 @@ async function boot() {
       return;
     }
 
-    targetCameraX = clampCamera(chickenX - layoutInfo.viewWidth * 0.36);
+    targetCameraX = clampCamera(chickenX - layoutInfo.worldViewWidth * 0.36);
   }
 
   function applyCamera() {
-    worldLayer.x = -cameraX * layoutInfo.scale;
+    worldLayer.x = -cameraX * layoutInfo.scale * layoutInfo.worldScale;
   }
 
   function currentChickenState(): ChickenAnimationState {
@@ -846,17 +1122,21 @@ async function boot() {
     return 'idle';
   }
 
+  function displayGroundY(y: number): number {
+    return y - layoutInfo.groundLiftY;
+  }
+
   function updateBalanceFromBank() {
-    balanceValue = STARTING_BALANCE + bankedWinnings;
-    balance = formatBalance(balanceValue);
+    const currentChickenWin = gameState === 'running' ? roundCashoutValue() : bankedWinnings;
+    balance = formatBalance(Math.max(0, GLOBAL_POOL_AMOUNT - currentChickenWin));
   }
 
   function currentRoundBase(): number {
-    return bankedWinnings > 0 ? bankedWinnings : STAKE_AMOUNT;
+    return bankedWinnings > 0 ? bankedWinnings : stakeAmount;
   }
 
   function roundPayout(): number {
-    return activeIndex >= 0 ? payoutForIndex(activeIndex, currentRoundBase()) : currentRoundBase();
+    return activeIndex >= 0 ? payoutForIndex(activeIndex, currentRoundBase(), difficulty) : currentRoundBase();
   }
 
   function roundCashoutValue(): number {
@@ -865,6 +1145,16 @@ async function boot() {
 
   function updateCashout() {
     cashout = formatUsd(roundCashoutValue());
+    updateBalanceFromBank();
+  }
+
+  function rotateLiveWin(now = performance.now()) {
+    liveWinIndex = (liveWinIndex + 1) % LIVE_WIN_MOCKS.length;
+    liveWin = LIVE_WIN_MOCKS[liveWinIndex];
+    liveOnlineCount = 2960 + Math.floor(Math.random() * 360);
+    liveWinVisible = true;
+    liveWinVisibleUntil = now + LIVE_WIN_VISIBLE_MS;
+    nextLiveWinAt = now + LIVE_WIN_INTERVAL_MS + Math.random() * 1200;
   }
 
   function viewportSize() {
@@ -884,13 +1174,19 @@ async function boot() {
 
   function layout() {
     const scale = app.screen.height / DESIGN_HEIGHT;
+    const isCompact = app.screen.width < COMPACT_CONTROLS_BREAKPOINT;
+    const worldScale = isCompact ? COMPACT_WORLD_SCALE : 1;
     layoutInfo = {
       scale,
       viewWidth: app.screen.width / scale,
+      worldViewWidth: app.screen.width / (scale * worldScale),
+      worldScale,
+      screenWidth: app.screen.width,
+      groundLiftY: isCompact ? COMPACT_GROUND_LIFT_Y : 0,
     };
-    worldLayer.scale.set(scale);
+    worldLayer.scale.set(scale * worldScale);
+    worldLayer.y = TOP_H * scale * (1 - worldScale);
     uiLayer.scale.set(scale);
-    worldLayer.y = 0;
     uiLayer.position.set(0, 0);
     cameraX = clampCamera(cameraX);
     targetCameraX = clampCamera(targetCameraX);
@@ -902,13 +1198,18 @@ async function boot() {
     worldLayer.removeChildren();
     uiLayer.removeChildren();
     pads = [];
-    flame = undefined;
+    miniFires = [];
+    burnFlame = undefined;
+    fallbackFlame = undefined;
+    updateBalanceFromBank();
 
     drawTopBar(uiLayer, layoutInfo.viewWidth, balance);
     drawLivePanel(worldLayer);
+    if (liveWinVisible) drawLiveWinsOverlay(uiLayer, liveWin, liveOnlineCount);
     drawStage(worldLayer);
 
-    for (let i = 0; i < MULTIPLIERS.length; i++) {
+    for (let i = 0; i < GAME_SETTINGS.padCount; i++) {
+      const padWorldX = FIRST_PAD_X + i * PAD_STEP;
       let state: PadState = 'idle';
       if (i === PRIZE_INDEX && gameState !== 'burned') state = 'prize';
       else if (gameState === 'burned' && i === activeIndex) state = 'burned';
@@ -916,28 +1217,44 @@ async function boot() {
       else if (i === activeIndex) state = 'active';
       if (gameState === 'burned' && i === 0) state = 'dead';
 
-      const pad = makePad(MULTIPLIERS[i], FIRST_PAD_X + i * PAD_STEP, state, objectSprites, decorSprites);
+      const pad = makePad(multiplierLabelForIndex(i, difficulty), padWorldX, state, objectSprites, decorSprites);
+      pad.root.y -= layoutInfo.groundLiftY;
       pads.push(pad);
       worldLayer.addChild(pad.root);
     }
 
     for (let i = 0; i < PRIZE_INDEX; i++) {
-      const padPressed = gameState !== 'ready' && i <= activeIndex;
-      drawVent(worldLayer, FIRST_PAD_X + i * PAD_STEP, FLOOR_Y - 27, decorSprites, padPressed);
+      const padWorldX = FIRST_PAD_X + i * PAD_STEP;
+      const padPressed = gameState !== 'ready' && (i < activeIndex || (i === activeIndex && moveProgress >= 1));
+      drawVent(worldLayer, padWorldX, FLOOR_Y - 27, decorSprites, padPressed, layoutInfo.groundLiftY);
+      const miniFireSlot = miniFireSlots[i];
+      if (fireSprites && miniFireSlot && i > activeIndex) {
+        miniFires.push(drawMiniFire(
+          worldLayer,
+          fireSprites.mini,
+          padWorldX,
+          displayGroundY(FLOOR_Y - 24),
+          miniFireSlot,
+        ));
+      }
     }
-    drawFloor(worldLayer);
+    drawFloor(worldLayer, layoutInfo.groundLiftY);
 
-    chicken.position.set(chickenX, chickenY);
+    chicken.position.set(chickenX, displayGroundY(chickenY));
     chicken.scale.set(0.95);
     updateChickenFrame(chicken, currentChickenState(), performance.now() / 1000);
     worldLayer.addChild(chicken);
 
     if (gameState === 'burned') {
       const x = FIRST_PAD_X + activeIndex * PAD_STEP;
-      flame = drawFlame(worldLayer, x, FLOOR_Y - 85, 1.65);
+      if (fireSprites) {
+        burnFlame = drawFireAnimation(worldLayer, fireSprites.burn, x, displayGroundY(FLOOR_Y - 34), 430, 7, 0, 0.035, false, burnedAt / 1000);
+      } else {
+        fallbackFlame = drawFallbackFlame(worldLayer, x, displayGroundY(FLOOR_Y - 121), 1.65);
+      }
     }
 
-    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, layoutInfo.viewWidth, advance, cashOut, setDifficulty);
+    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, stakeAmount, layoutInfo.viewWidth, layoutInfo.screenWidth, advance, startAutoRun, cashOut, setDifficulty, setStake);
     if (roundMessage) drawRoundMessage(uiLayer, layoutInfo.viewWidth, roundMessage);
     updateCameraTarget();
     applyCamera();
@@ -953,8 +1270,14 @@ async function boot() {
     chickenX = START_CHICKEN_X;
     chickenY = START_CHICKEN_Y;
     targetX = chickenX;
+    targetY = chickenY;
+    moveStartX = chickenX;
+    moveStartY = chickenY;
     moveProgress = 1;
     burnedAt = 0;
+    autoRun = false;
+    autoAdvanceAt = 0;
+    miniFireSlots = createMiniFireSlots();
     landingResolved = true;
     movementSprite = 'go';
     chicken.rotation = 0;
@@ -968,6 +1291,8 @@ async function boot() {
   }
 
   function settleRound(title: string, nextBankValue: number) {
+    autoRun = false;
+    autoAdvanceAt = 0;
     bankedWinnings = nextBankValue;
     saveBankedWinnings(bankedWinnings);
     updateBalanceFromBank();
@@ -994,35 +1319,48 @@ async function boot() {
     if (activeIndex > 0 && Math.random() < roastChance(activeIndex)) {
       gameState = 'burned';
       burnedAt = performance.now();
+      autoRun = false;
+      autoAdvanceAt = 0;
       audio.play('lose');
       render();
       return;
     }
 
-    audio.play('step');
+    render();
+    if (autoRun) autoAdvanceAt = performance.now() + AUTO_ADVANCE_DELAY_MS;
   }
 
-  function startRun() {
+  function startRun(isAutoRun = false) {
     if (roundMessage) return;
-    audio.play('click');
     gameState = 'running';
+    autoRun = isAutoRun;
+    autoAdvanceAt = 0;
     activeIndex = 0;
-    updateBalanceFromBank();
-    updateCashout();
-    chickenX = FIRST_PAD_X;
+    moveStartX = chickenX;
+    moveStartY = chickenY;
     chickenY = RUN_CHICKEN_Y;
-    targetX = chickenX;
-    moveProgress = 1;
+    targetX = FIRST_PAD_X;
+    targetY = RUN_CHICKEN_Y;
+    moveProgress = 0;
     burnedAt = 0;
     roundMessageAt = 0;
-    landingResolved = true;
+    landingResolved = false;
     movementSprite = 'go';
+    audio.play('step');
+    updateCashout();
     updateCameraTarget();
     render();
   }
 
+  function startAutoRun() {
+    if (gameState !== 'ready') return;
+    startRun(true);
+  }
+
   function cashOut() {
     if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || roundMessage) return;
+    autoRun = false;
+    autoAdvanceAt = 0;
     settleRound('WIN!', roundCashoutValue());
   }
 
@@ -1036,11 +1374,15 @@ async function boot() {
     if (gameState === 'burned' || gameState === 'won' || moveProgress < 1) return;
     if (activeIndex >= PRIZE_INDEX) return;
 
-    audio.play('click');
+    autoAdvanceAt = 0;
+    audio.play('step');
     activeIndex += 1;
     updateCashout();
+    moveStartX = chickenX;
+    moveStartY = chickenY;
     targetX = FIRST_PAD_X + activeIndex * PAD_STEP;
-    movementSprite = 'go';
+    targetY = activeIndex >= PRIZE_INDEX ? PRIZE_CHICKEN_Y : RUN_CHICKEN_Y;
+    movementSprite = activeIndex >= PRIZE_INDEX ? 'jump' : 'go';
     moveProgress = 0;
     landingResolved = false;
     render();
@@ -1050,6 +1392,16 @@ async function boot() {
     if (difficulty === nextDifficulty || gameState !== 'ready') return;
     difficulty = nextDifficulty;
     audio.play('click');
+    updateCashout();
+    render();
+  }
+
+  function setStake(nextStake: StakeAmount) {
+    if (stakeAmount === nextStake || gameState !== 'ready') return;
+    stakeAmount = nextStake;
+    bankedWinnings = 0;
+    saveBankedWinnings(bankedWinnings);
+    updateCashout();
     render();
   }
 
@@ -1063,26 +1415,47 @@ async function boot() {
   });
 
   app.ticker.add((ticker) => {
-    const t = performance.now() / 1000;
+    const now = performance.now();
+    const t = now / 1000;
+
+    if (now >= nextLiveWinAt) {
+      rotateLiveWin(now);
+      render();
+    } else if (liveWinVisible && now >= liveWinVisibleUntil) {
+      liveWinVisible = false;
+      render();
+    }
+
+    if (autoRun && autoAdvanceAt > 0 && now >= autoAdvanceAt) {
+      autoAdvanceAt = 0;
+      advance();
+    }
 
     if (moveProgress < 1) {
       moveProgress = Math.min(1, moveProgress + ticker.deltaTime * MOVE_SPEED);
-      const start = chickenX;
       const eased = 1 - Math.pow(1 - moveProgress, 3);
-      chickenX = start + (targetX - start) * eased;
-      chickenY = RUN_CHICKEN_Y + Math.sin(t * 9) * 2;
-      chicken.rotation = Math.sin(t * 8) * 0.015;
-      chicken.position.set(chickenX, chickenY);
+      chickenX = moveStartX + (targetX - moveStartX) * eased;
+      const baseY = moveStartY + (targetY - moveStartY) * eased;
+      if (movementSprite === 'jump') {
+        chickenY = baseY - Math.sin(moveProgress * Math.PI) * 88;
+        chicken.rotation = Math.sin(moveProgress * Math.PI) * -0.07;
+      } else {
+        chickenY = baseY + Math.sin(t * 9) * 2;
+        chicken.rotation = Math.sin(t * 8) * 0.015;
+      }
+      chicken.position.set(chickenX, displayGroundY(chickenY));
       updateChickenFrame(chicken, movementSprite, t);
       if (moveProgress === 1) {
+        chickenY = targetY;
+        chicken.position.set(chickenX, displayGroundY(chickenY));
         chicken.rotation = 0;
         resolveLanding();
       }
     } else if (gameState === 'burned') {
-      chicken.y = chickenY;
+      chicken.y = displayGroundY(chickenY);
       updateChickenFrame(chicken, 'dead', t);
     } else {
-      chicken.y = chickenY + Math.sin(t * 4) * 3;
+      chicken.y = displayGroundY(chickenY);
       updateChickenFrame(chicken, 'idle', t);
     }
 
@@ -1095,9 +1468,17 @@ async function boot() {
       else pad.root.scale.set(1);
     }
 
-    if (flame) {
-      flame.y = FLOOR_Y - 85 + Math.sin(t * 7) * 7;
-      flame.scale.set(1.65 + Math.sin(t * 8) * 0.06);
+    for (const miniFire of miniFires) {
+      updateFireAnimation(miniFire, t);
+    }
+
+    if (burnFlame) {
+      updateFireAnimation(burnFlame, t);
+    }
+
+    if (fallbackFlame) {
+      fallbackFlame.y = displayGroundY(FLOOR_Y - 121) + Math.sin(t * 7) * 7;
+      fallbackFlame.scale.set(1.65 + Math.sin(t * 8) * 0.06);
     }
 
     if (gameState === 'burned' && burnedAt > 0 && performance.now() - burnedAt >= REVIVE_DELAY_MS) {
@@ -1131,6 +1512,7 @@ async function boot() {
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', scheduleResize);
   window.visualViewport?.addEventListener('resize', scheduleResize);
+  updateCashout();
   relayout();
 }
 

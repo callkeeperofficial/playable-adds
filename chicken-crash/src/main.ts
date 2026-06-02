@@ -75,7 +75,7 @@ async function attemptStep() {
   phase = 'jumping';
   render();
   const next = stepIndex + 1;
-  const collision = next > 0 && Math.random() < collisionChanceFor(difficulty, next);
+  const collision = next > 0 && !scene.hasVehicleOnStep(next) && Math.random() < collisionChanceFor(difficulty, next);
   if (collision) {
     phase = 'crashed';
     roundValue = 0;

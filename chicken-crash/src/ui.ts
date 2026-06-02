@@ -76,10 +76,10 @@ export class GameUi {
               ${(['easy', 'medium', 'hard', 'hardcore'] as Difficulty[]).map((difficulty) => `<button data-difficulty="${difficulty}" class="${state.difficulty === difficulty ? 'selected' : ''}" ${locked ? 'disabled' : ''}>${difficulty[0].toUpperCase()}${difficulty.slice(1)}</button>`).join('')}
             </div>
           </div>
-          ${state.active ? '' : `<button class="autoplay ${state.autoplay ? 'selected' : ''}" aria-label="Toggle autoplay"><span class="autoplay-ring"></span><span class="autoplay-play"></span></button>`}
+          ${state.active ? '' : `<button class="autoplay ${state.autoplay ? 'selected' : ''}" aria-label="Toggle autoplay"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M20 50a30 30 0 0 1 56-15" /><path d="M80 50a30 30 0 0 1-56 15" /><path class="autoplay-arrow" d="m68 30 10 4 2-11Z" /><path class="autoplay-arrow" d="m32 70-10-4-2 11Z" /><path class="autoplay-play" d="m43 35 26 15-26 15Z" /></svg></button>`}
           <div class="primary">
             ${state.active
-              ? `<button class="go" ${state.busy ? 'disabled' : ''}>GO</button><button class="cashout" ${state.busy ? 'disabled' : ''}>CASH OUT<br><b>${money(state.roundValue)} USD</b></button>`
+              ? `<button class="cashout" ${state.busy ? 'disabled' : ''}>CASH OUT<br><b>${money(state.roundValue)} USD</b></button><button class="go" ${state.busy ? 'disabled' : ''}>GO</button>`
               : `<button class="play" ${state.busy ? 'disabled' : ''}>Play</button>`}
           </div>
         </div>

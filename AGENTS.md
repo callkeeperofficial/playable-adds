@@ -12,6 +12,7 @@ Current playable projects:
 
 - `chicken-road/`
 - `chicken-crash/`
+- `chicken-road-unfinished/`
 
 When adding another playable, create a new top-level directory rather than
 replacing or folding it into an existing game.
@@ -38,6 +39,7 @@ Reserved local ports:
 
 - `chicken-road`: `http://localhost:5173/`
 - `chicken-crash`: `http://localhost:5174/`
+- `chicken-road-unfinished`: `http://localhost:5175/`
 
 Example for Chicken Crash:
 
@@ -64,6 +66,7 @@ is available through a final directory named after its playable:
 ```text
 https://callkeeperofficial.github.io/playable-adds/chicken-road/
 https://callkeeperofficial.github.io/playable-adds/chicken-crash/
+https://callkeeperofficial.github.io/playable-adds/chicken-road-unfinished/
 ```
 
 The repository root may contain a simple index with links to every playable:
@@ -96,6 +99,9 @@ pages-bundle/
   chicken-crash/
     index.html
     assets/
+  chicken-road-unfinished/
+    index.html
+    assets/
 ```
 
 6. Optionally add a root `pages-bundle/index.html` that links to all games.
@@ -113,4 +119,3 @@ Before considering a deployment change complete:
 - Confirm relative assets load correctly from each final subdirectory.
 - Confirm the workflow uploads the shared Pages bundle.
 - Verify each published game at its final GitHub Pages URL after deployment.
-

@@ -1,16 +1,28 @@
-import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { AnimatedSprite, Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { multiplierFor, ROAD_HEIGHT, ROUTE_STEPS, STEP_WIDTH, Difficulty } from './config';
 import { playSound } from './audio';
 
 type Frame = { x: number; y: number; w: number; h: number };
 type StepView = { root: Container; medal: Sprite; label: Text; vent: Sprite };
-type AmbientVehicle = { sprite: Sprite; speed: number; stepIndex: number; stopY?: number; parkedMS?: number };
+type AmbientVehicle = { sprite: Sprite; speed: number; stepIndex: number; stopY?: number; stopped?: boolean };
+type VideoIdleAtlas = {
+  frameWidth: number;
+  frameHeight: number;
+  columns: number;
+  frameCount: number;
+  fps: number;
+};
 
 const WORLD_START = 500;
 const ROAD_TOP = 0;
 const MANHOLE_Y = 550;
 const CHICKEN_Y = 580;
 const MUTED_TINT = 0xe4e1dd;
+const BARRIER_STOP_Y = 118;
+const VEHICLE_BLOCK_TOP = MANHOLE_Y - 125;
+const VEHICLE_BLOCK_BOTTOM = CHICKEN_Y + 115;
+const USE_VIDEO_CHICKEN = new URLSearchParams(window.location.search).has('videoChicken');
 const frames = {
   lamp: { x: 0, y: 0, w: 455, h: 770 },
   iceTruck: { x: 510, y: 0, w: 385, h: 735 },
@@ -54,6 +66,9 @@ export class GameScene {
   private steps: StepView[] = [];
   private objectTexture!: Texture;
   private chickenTexture!: Texture;
+  private videoChickenTexture?: Texture;
+  private videoChickenAtlas?: VideoIdleAtlas;
+  private spineChicken?: Spine;
   private startTexture!: Texture;
   private finishTexture!: Texture;
   private viewWidth = 1200;
@@ -71,6 +86,17 @@ export class GameScene {
       Assets.load(`${import.meta.env.BASE_URL}assets/start-bg.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/finish-bg.png`),
     ]);
+    if (USE_VIDEO_CHICKEN) {
+      [this.videoChickenTexture, this.videoChickenAtlas] = await Promise.all([
+        Assets.load(`${import.meta.env.BASE_URL}assets/video-idle/chicken-idle-video-atlas.png`),
+        fetch(`${import.meta.env.BASE_URL}assets/video-idle/chicken-idle-video-atlas.json`).then((response) => response.json()),
+      ]);
+    }
+    if (!USE_VIDEO_CHICKEN) {
+      Assets.add({ alias: 'spineChickenData', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.json` });
+      Assets.add({ alias: 'spineChickenAtlas', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.atlas` });
+      await Assets.load(['spineChickenData', 'spineChickenAtlas']);
+    }
     this.app.stage.addChild(this.world);
     this.drawRoad();
     this.world.addChild(this.route, this.vehicles, this.chicken);
@@ -87,6 +113,10 @@ export class GameScene {
     this.world.scale.set(this.worldScale);
     this.viewWidth = host.clientWidth;
     this.positionCamera(this.currentStep, true);
+  }
+
+  hasVehicleOnStep(stepIndex: number) {
+    return this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex && !vehicle.sprite.destroyed);
   }
 
   reset(difficulty?: Difficulty) {
@@ -111,7 +141,32 @@ export class GameScene {
   async jumpTo(stepIndex: number, difficulty: Difficulty) {
     const fromX = this.chicken.x;
     const targetX = WORLD_START + stepIndex * STEP_WIDTH;
+    await this.waitForStepTraffic(stepIndex);
     playSound('jump');
+    this.setSpineAnimation('jump', false);
+    await this.animate(560, (progress) => {
+      this.chicken.x = fromX + (targetX - fromX) * ease(progress);
+      this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
+      this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
+      this.positionCamera(stepIndex, false);
+    });
+    this.chicken.y = CHICKEN_Y;
+    this.chicken.rotation = 0;
+    this.currentStep = stepIndex;
+    this.setSpineAnimation('idle', true);
+    this.positionCamera(stepIndex, true);
+    if (stepIndex > 0) this.passStep(stepIndex - 1);
+    this.hideCurrentStep(stepIndex);
+    if (stepIndex < ROUTE_STEPS - 1) this.addBarrier(stepIndex);
+    this.updateRouteHighlights(stepIndex + 1);
+  }
+
+  async crash(stepIndex: number) {
+    const targetX = WORLD_START + stepIndex * STEP_WIDTH;
+    const fromX = this.chicken.x;
+    await this.waitForStepTraffic(stepIndex);
+    playSound('jump');
+    this.setSpineAnimation('jump', false);
     await this.animate(560, (progress) => {
       this.chicken.x = fromX + (targetX - fromX) * ease(progress);
       this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
@@ -124,16 +179,20 @@ export class GameScene {
     this.positionCamera(stepIndex, true);
     if (stepIndex > 0) this.passStep(stepIndex - 1);
     this.hideCurrentStep(stepIndex);
-    if (stepIndex < ROUTE_STEPS - 1) this.addBarrier(stepIndex);
     this.updateRouteHighlights(stepIndex + 1);
-  }
 
-  async crash(stepIndex: number) {
-    const targetX = WORLD_START + stepIndex * STEP_WIDTH;
-    await this.sendVehicle(targetX);
-    this.chicken.visible = false;
-    this.spawnCrashParts();
-    playSound('lose');
+    await this.sendVehicle(targetX, () => {
+      playSound('lose');
+      if (this.spineChicken) this.setSpineAnimation('death', false);
+      else {
+        this.chicken.visible = false;
+        this.spawnCrashParts();
+      }
+    });
+    if (this.spineChicken) {
+      await sleep(650);
+      return;
+    }
     await this.animate(900, (progress) => {
       this.chickenParts.forEach((part, index) => {
         part.x += (index - 3) * 1.8;
@@ -146,12 +205,14 @@ export class GameScene {
   }
 
   async finish(amount: number) {
-    const finishX = WORLD_START + ROUTE_STEPS * STEP_WIDTH + 140;
     const fromX = this.chicken.x;
-    await this.animate(850, (progress) => {
+    const finishX = fromX + this.viewWidth / this.worldScale + 360;
+    this.setSpineAnimation('win', true);
+    this.chicken.y = CHICKEN_Y;
+    this.chicken.rotation = 0;
+    await this.animate(1300, (progress) => {
       this.chicken.x = fromX + (finishX - fromX) * ease(progress);
-      this.chicken.y = CHICKEN_Y - progress * 250;
-      this.positionCamera(ROUTE_STEPS, false);
+      this.chicken.y = CHICKEN_Y;
     });
     const notification = new Container();
     const plate = Sprite.from(`${import.meta.env.BASE_URL}assets/win-notification.png`);
@@ -212,6 +273,47 @@ export class GameScene {
   }
 
   private buildChicken() {
+    if (!USE_VIDEO_CHICKEN) {
+      const spine = Spine.from({
+        skeleton: 'spineChickenData',
+        atlas: 'spineChickenAtlas',
+        scale: 1,
+      });
+      this.spineChicken = spine;
+      this.setSpineAnimation('idle', true);
+      spine.scale.set(1.22);
+      spine.position.set(-6, 82);
+      this.chicken.addChild(spine);
+      this.chicken.scale.set(0.83);
+      this.chicken.eventMode = 'static';
+      this.chicken.cursor = 'pointer';
+      this.chicken.hitArea = new Rectangle(-130, -150, 260, 260);
+      this.chicken.on('pointertap', () => playSound('chick'));
+      return;
+    }
+    if (this.videoChickenTexture && this.videoChickenAtlas) {
+      const textures = Array.from({ length: this.videoChickenAtlas.frameCount }, (_, index) => {
+        const column = index % this.videoChickenAtlas!.columns;
+        const row = Math.floor(index / this.videoChickenAtlas!.columns);
+        return crop(this.videoChickenTexture!, {
+          x: column * this.videoChickenAtlas!.frameWidth,
+          y: row * this.videoChickenAtlas!.frameHeight,
+          w: this.videoChickenAtlas!.frameWidth,
+          h: this.videoChickenAtlas!.frameHeight,
+        });
+      });
+      const sprite = new AnimatedSprite(textures);
+      sprite.anchor.set(0.5, 0.78);
+      sprite.animationSpeed = this.videoChickenAtlas.fps / 60;
+      sprite.play();
+      this.chicken.addChild(sprite);
+      this.chicken.scale.set(0.62);
+      this.chicken.eventMode = 'static';
+      this.chicken.cursor = 'pointer';
+      this.chicken.hitArea = new Rectangle(-150, -230, 300, 270);
+      this.chicken.on('pointertap', () => playSound('chick'));
+      return;
+    }
     const body = new Sprite(crop(this.chickenTexture, { x: 355, y: 90, w: 190, h: 175 }));
     body.anchor.set(0.5);
     body.scale.set(1.08);
@@ -260,7 +362,7 @@ export class GameScene {
     this.route.addChild(barrier);
   }
 
-  private async sendVehicle(targetX: number) {
+  private async sendVehicle(targetX: number, onImpact?: () => void) {
     const carFrames = [frames.taxi, frames.police, frames.fireTruck, frames.greenTruck];
     const carFrame = carFrames[Math.floor(Math.random() * carFrames.length)];
     const car = new Sprite(crop(this.objectTexture, carFrame));
@@ -269,9 +371,15 @@ export class GameScene {
     car.position.set(targetX, -260);
     this.vehicles.addChild(car);
     playSound('car');
+    let impacted = false;
     await this.animate(720, (progress) => {
       car.y = -260 + progress * 1100;
+      if (!impacted && car.y >= CHICKEN_Y) {
+        impacted = true;
+        onImpact?.();
+      }
     });
+    if (!impacted) onImpact?.();
     car.destroy();
   }
 
@@ -282,23 +390,23 @@ export class GameScene {
       this.spawnAmbientVehicle();
     }
     this.ambientVehicles = this.ambientVehicles.filter((vehicle) => {
+      if (vehicle.stopped) return true;
       if (vehicle.stepIndex <= this.currentStep && vehicle.stopY === undefined) {
-        vehicle.stopY = 118;
-      }
-      if (vehicle.stopY !== undefined && vehicle.parkedMS !== undefined) {
-        vehicle.parkedMS += deltaMS;
-        if (vehicle.parkedMS >= 1100) {
-          vehicle.sprite.destroy();
-          return false;
+        vehicle.stopY = BARRIER_STOP_Y;
+        if (vehicle.sprite.y >= BARRIER_STOP_Y) {
+          vehicle.sprite.y = BARRIER_STOP_Y;
+          vehicle.stopped = true;
+          return true;
         }
-        return true;
       }
+
       const nextY = vehicle.sprite.y + vehicle.speed * deltaMS;
       if (vehicle.stopY !== undefined && nextY >= vehicle.stopY) {
         vehicle.sprite.y = vehicle.stopY;
-        vehicle.parkedMS = 0;
+        vehicle.stopped = true;
         return true;
       }
+
       vehicle.sprite.y = nextY;
       if (vehicle.sprite.y > ROAD_HEIGHT + 310 || vehicle.sprite.y < -310) {
         vehicle.sprite.destroy();
@@ -322,7 +430,7 @@ export class GameScene {
     const stepIndex = availableSteps[Math.floor(Math.random() * availableSteps.length)];
     const carFrame = [frames.taxi, frames.police, frames.iceTruck, frames.greenTruck][Math.floor(Math.random() * 4)];
     const sprite = new Sprite(crop(this.objectTexture, carFrame));
-    const blocked = stepIndex <= this.currentStep;
+    const shouldStopAtBarrier = stepIndex <= this.currentStep;
     sprite.anchor.set(0.5);
     sprite.scale.set(carFrame === frames.iceTruck ? 0.3 : 0.37);
     sprite.position.set(WORLD_START + stepIndex * STEP_WIDTH, -260);
@@ -331,8 +439,27 @@ export class GameScene {
       sprite,
       speed: 0.34,
       stepIndex,
-      stopY: blocked ? 118 : undefined,
+      stopY: shouldStopAtBarrier ? BARRIER_STOP_Y : undefined,
     });
+  }
+
+  private waitForStepTraffic(stepIndex: number) {
+    return new Promise<void>((resolve) => {
+      const tick = () => {
+        if (!this.hasBlockingTraffic(stepIndex)) resolve();
+        else requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  }
+
+  private hasBlockingTraffic(stepIndex: number) {
+    return this.ambientVehicles.some((vehicle) => (
+      vehicle.stepIndex === stepIndex
+      && !vehicle.sprite.destroyed
+      && vehicle.sprite.y >= VEHICLE_BLOCK_TOP
+      && vehicle.sprite.y <= VEHICLE_BLOCK_BOTTOM
+    ));
   }
 
   private spawnCrashParts() {
@@ -361,6 +488,13 @@ export class GameScene {
     this.chickenParts.forEach((part) => part.destroy({ children: true }));
     this.chickenParts = [];
     this.chicken.visible = true;
+    this.setSpineAnimation('idle', true);
+  }
+
+  private setSpineAnimation(name: string, loop: boolean) {
+    if (!this.spineChicken) return;
+    const animation = this.spineChicken.skeleton.data.findAnimation(name);
+    if (animation) this.spineChicken.state.setAnimation(0, animation.name, loop);
   }
 
   private positionCamera(stepIndex: number, immediate = false) {

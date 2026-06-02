@@ -30,6 +30,7 @@ jobs:
           cache-dependency-path: |
             chicken-road/package-lock.json
             chicken-crash/package-lock.json
+            chicken-road-unfinished/package-lock.json
 
       - name: Install Chicken Road dependencies
         working-directory: chicken-road
@@ -47,11 +48,20 @@ jobs:
         working-directory: chicken-crash
         run: npm run build
 
+      - name: Install Chicken Road Unfinished dependencies
+        working-directory: chicken-road-unfinished
+        run: npm ci
+
+      - name: Build Chicken Road Unfinished
+        working-directory: chicken-road-unfinished
+        run: npm run build
+
       - name: Assemble Pages bundle
         run: |
-          mkdir -p pages-bundle/chicken-road pages-bundle/chicken-crash
+          mkdir -p pages-bundle/chicken-road pages-bundle/chicken-crash pages-bundle/chicken-road-unfinished
           cp -R chicken-road/dist/. pages-bundle/chicken-road/
           cp -R chicken-crash/dist/. pages-bundle/chicken-crash/
+          cp -R chicken-road-unfinished/dist/. pages-bundle/chicken-road-unfinished/
           cp pages-index.html pages-bundle/index.html
 
       - name: Configure Pages

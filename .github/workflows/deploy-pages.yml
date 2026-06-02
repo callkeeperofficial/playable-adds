@@ -27,12 +27,32 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            chicken-road/package-lock.json
+            chicken-crash/package-lock.json
 
-      - name: Install dependencies
+      - name: Install Chicken Road dependencies
+        working-directory: chicken-road
         run: npm ci
 
-      - name: Build
+      - name: Build Chicken Road
+        working-directory: chicken-road
         run: npm run build
+
+      - name: Install Chicken Crash dependencies
+        working-directory: chicken-crash
+        run: npm ci
+
+      - name: Build Chicken Crash
+        working-directory: chicken-crash
+        run: npm run build
+
+      - name: Assemble Pages bundle
+        run: |
+          mkdir -p pages-bundle/chicken-road pages-bundle/chicken-crash
+          cp -R chicken-road/dist/. pages-bundle/chicken-road/
+          cp -R chicken-crash/dist/. pages-bundle/chicken-crash/
+          cp pages-index.html pages-bundle/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v6
@@ -42,7 +62,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: dist
+          path: pages-bundle
 
   deploy:
     environment:

@@ -1,14 +1,14 @@
-# Chicken Road Canvas
+# Playable Games
 
-PixiJS + Vite canvas prototype that recreates the provided Chicken Road UI references with vector-drawn game elements.
+This repository contains standalone playable game projects.
 
-## Run
+## Games
 
-```bash
-npm install
-npm run dev
-```
+- `chicken-road/` - PixiJS + Vite Chicken Road playable.
+- `chicken-crash/` - PixiJS + Vite Chicken Crash playable.
 
-## Settings
+GitHub Pages builds every playable and publishes each game in its own
+subdirectory:
 
-Change `GAME_SETTINGS.padCount` in `src/main.ts` to adjust the number of pads. The multipliers, prize index, level width, and camera bounds are recalculated automatically.
+- `https://callkeeperofficial.github.io/playable-adds/chicken-road/`
+- `https://callkeeperofficial.github.io/playable-adds/chicken-crash/`

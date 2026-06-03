@@ -8,6 +8,7 @@ export type UiState = {
   difficulty: Difficulty;
   roundValue: number;
   pool: number;
+  goBlocked: boolean;
   online: number;
   liveWin?: { name: string; amount: number };
 };
@@ -39,7 +40,7 @@ export class GameUi {
     const locked = state.active || state.busy;
     this.root.innerHTML = `
       <header class="topbar">
-        <img class="logo" src="${import.meta.env.BASE_URL}assets/logo.png" alt="Chicken Road" />
+        <img class="logo" src="${import.meta.env.BASE_URL}assets/logo.png" alt="Chicken Crush" />
         <div class="header-actions">
           <button class="top-action how">ⓘ&nbsp; How to play?</button>
           <div class="pool"><b>${money(state.pool)}</b> <span>$</span></div>
@@ -79,8 +80,8 @@ export class GameUi {
           ${state.active ? '' : `<button class="autoplay ${state.autoplay ? 'selected' : ''}" aria-label="Toggle autoplay"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M20 50a30 30 0 0 1 56-15" /><path d="M80 50a30 30 0 0 1-56 15" /><path class="autoplay-arrow" d="m68 30 10 4 2-11Z" /><path class="autoplay-arrow" d="m32 70-10-4-2 11Z" /><path class="autoplay-play" d="m43 35 26 15-26 15Z" /></svg></button>`}
           <div class="primary">
             ${state.active
-              ? `<button class="cashout" ${state.busy ? 'disabled' : ''}>CASH OUT<br><b>${money(state.roundValue)} USD</b></button><button class="go" ${state.busy ? 'disabled' : ''}>GO</button>`
-              : `<button class="play" ${state.busy ? 'disabled' : ''}>Play</button>`}
+              ? `<button class="cashout" ${state.busy ? 'disabled' : ''}>CASH OUT<br><b>${money(state.roundValue)} USD</b></button><button class="go" ${state.busy || state.goBlocked ? 'disabled' : ''}>GO</button>`
+              : `<button class="play" ${state.busy || state.goBlocked ? 'disabled' : ''}>Play</button>`}
           </div>
         </div>
       </section>`;

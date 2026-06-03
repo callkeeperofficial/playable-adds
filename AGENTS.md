@@ -13,9 +13,21 @@ Current playable projects:
 - `chicken-road/`
 - `chicken-crash/`
 - `chicken-road-unfinished/`
+- `chicken-pilot/`
 
 When adding another playable, create a new top-level directory rather than
 replacing or folding it into an existing game.
+
+## Isolation Requirement
+
+Do not modify one playable while working on another. Game behavior, source
+assets, visual assets, audio, UI, and runtime code changes must stay inside the
+owning top-level game directory.
+
+For the current `chicken-pilot` work, do not change `chicken-road/`,
+`chicken-crash/`, or `chicken-road-unfinished/`. Only shared repository files
+such as this guide, README entries, the root Pages index, or the GitHub Pages
+workflow may be updated when they are needed to register or publish a playable.
 
 ## Project Conventions
 
@@ -40,6 +52,7 @@ Reserved local ports:
 - `chicken-road`: `http://localhost:5173/`
 - `chicken-crash`: `http://localhost:5174/`
 - `chicken-road-unfinished`: `http://localhost:5175/`
+- `chicken-pilot`: `http://localhost:5176/`
 
 Example for Chicken Crash:
 
@@ -67,6 +80,7 @@ is available through a final directory named after its playable:
 https://callkeeperofficial.github.io/playable-adds/chicken-road/
 https://callkeeperofficial.github.io/playable-adds/chicken-crash/
 https://callkeeperofficial.github.io/playable-adds/chicken-road-unfinished/
+https://callkeeperofficial.github.io/playable-adds/chicken-pilot/
 ```
 
 The repository root may contain a simple index with links to every playable:
@@ -100,6 +114,9 @@ pages-bundle/
     index.html
     assets/
   chicken-road-unfinished/
+    index.html
+    assets/
+  chicken-pilot/
     index.html
     assets/
 ```

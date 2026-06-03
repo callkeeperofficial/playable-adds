@@ -19,11 +19,13 @@ let marketingPool = INITIAL_POOL;
 let autoplay = false;
 let online = 16_500 + Math.floor(Math.random() * 230);
 let liveWin: UiState['liveWin'];
+let goBlocked = false;
+const AUTOPLAY_DELAY_MS = 180;
 
 const ui = new GameUi(root, {
   onPlay: () => void start(),
   onGo: () => void attemptStep(),
-  onCashout: cashout,
+  onCashout: () => void cashout(),
   onToggleAutoplay: () => {
     autoplay = !autoplay;
     render();
@@ -52,6 +54,7 @@ function state(): UiState {
     difficulty,
     roundValue,
     pool: marketingPool,
+    goBlocked,
     online,
     liveWin,
   };
@@ -62,34 +65,72 @@ function render() {
   if (document.querySelector('canvas')) scene.resize(ui.getCanvasHost());
 }
 
+function syncGoBlocked() {
+  const next = stepIndex + 1;
+  const blocked = (phase === 'ready' || phase === 'active')
+    && next >= 0
+    && next < ROUTE_STEPS
+    && scene.isStepBlockedForJump(next);
+  if (blocked === goBlocked) return;
+  goBlocked = blocked;
+  render();
+}
+
 async function start() {
   if (phase !== 'ready') return;
   stepIndex = -1;
   roundValue = 0;
+  goBlocked = false;
   scene.reset(difficulty);
   await attemptStep();
 }
 
 async function attemptStep() {
   if (phase !== 'ready' && phase !== 'active') return;
-  phase = 'jumping';
-  render();
   const next = stepIndex + 1;
-  const collision = next > 0 && !scene.hasVehicleOnStep(next) && Math.random() < collisionChanceFor(difficulty, next);
+  if (scene.isStepBlockedForJump(next)) {
+    goBlocked = true;
+    render();
+    if (autoplay) scheduleAutoplay();
+    return;
+  }
+  phase = 'jumping';
+  goBlocked = false;
+  render();
+  const existingVehicleWillHit = scene.prepareVehicleCrash(next);
+  if (!existingVehicleWillHit) scene.prepareBarrierStop(next);
+  const collision = !existingVehicleWillHit
+    && next > 0
+    && !scene.hasVehicleOnStep(next)
+    && Math.random() < collisionChanceFor(difficulty, next);
   if (collision) {
     phase = 'crashed';
     roundValue = 0;
+    goBlocked = false;
     render();
     autoplay = false;
     await scene.crash(next);
     resetRound();
     return;
   }
-  await scene.jumpTo(next, difficulty);
+  await scene.jumpTo(next, difficulty, { placeBarrier: !existingVehicleWillHit });
   stepIndex = next;
+  if (existingVehicleWillHit || scene.hasVehicleThreatOnStep(next)) {
+    phase = 'crashed';
+    roundValue = 0;
+    goBlocked = false;
+    render();
+    autoplay = false;
+    const crashed = await scene.crashWithExistingVehicle(next);
+    if (crashed) {
+      resetRound();
+      return;
+    }
+  }
   roundValue = Number((stake * multiplierFor(difficulty, stepIndex)).toFixed(2));
   if (stepIndex >= ROUTE_STEPS - 1) {
     phase = 'finishing';
+    goBlocked = false;
     render();
     autoplay = false;
     const prize = Number((roundValue + stake * 5).toFixed(2));
@@ -99,19 +140,26 @@ async function attemptStep() {
     return;
   }
   phase = 'active';
+  syncGoBlocked();
   render();
   scheduleAutoplay();
 }
 
 function scheduleAutoplay() {
   if (!autoplay || phase !== 'active') return;
-  window.setTimeout(() => void attemptStep(), 650);
+  window.setTimeout(() => void attemptStep(), AUTOPLAY_DELAY_MS);
 }
 
-function cashout() {
+async function cashout() {
   if (phase !== 'active') return;
+  const prize = roundValue;
+  phase = 'finishing';
+  autoplay = false;
+  goBlocked = false;
+  render();
   playSound('cashout');
-  bank(roundValue);
+  await scene.showWinNotification(prize);
+  bank(prize);
   resetRound();
 }
 
@@ -125,6 +173,7 @@ function resetRound() {
   phase = 'ready';
   stepIndex = -1;
   roundValue = 0;
+  goBlocked = false;
   scene.reset(difficulty);
   render();
 }
@@ -144,5 +193,6 @@ function showLiveWin() {
 render();
 await scene.mount(ui.getCanvasHost(), difficulty);
 window.addEventListener('resize', () => scene.resize(ui.getCanvasHost()));
+window.setInterval(syncGoBlocked, 100);
 window.setInterval(showLiveWin, 4200);
 window.setTimeout(showLiveWin, 900);

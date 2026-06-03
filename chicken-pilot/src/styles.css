@@ -1,0 +1,69 @@
+:root { font-family: Arial, Helvetica, sans-serif; color: #f7f7f7; background: #292b2c; }
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+button, select { font: inherit; cursor: pointer; border: 0; color: #fff; font-weight: 800; }
+button:disabled, select:disabled { cursor: default; opacity: .38; }
+.topbar { height: 50px; background: #414141; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 22px; position: relative; z-index: 3; }
+.logo { width: 220px; height: auto; display: block; }
+.logo-mobile { display: none; }
+.header-actions { display: flex; gap: 16px; align-items: center; height: 100%; }
+.top-action, .pool { border-radius: 9px; background: #555; min-height: 35px; padding: 0 16px; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.pool { min-width: 190px; gap: 13px; font-weight: 800; }
+.pool span, .stake-row span { display: inline-flex; border-radius: 50%; color: #555; background: #fff; width: 21px; height: 21px; align-items: center; justify-content: center; font-size: 15px; }
+.icon { width: 42px; padding: 0; font-size: 22px; }
+#canvas-host { position: absolute; inset: 50px 0 230px; overflow: hidden; }
+#canvas-host canvas { width: 100%; height: 100%; display: block; }
+.controls-shell { position: absolute; bottom: 0; width: 100%; height: 230px; padding: 24px 42px; background: #292b2c; z-index: 5; }
+.controls { height: 100%; display: flex; gap: 18px; align-items: center; border: 4px solid #555; border-radius: 22px; padding: 18px 24px; background: #3b3b3b; }
+.panel, .stakes button, .autoplay, .primary button, select { border-radius: 11px; background: #585858; box-shadow: 0 8px 8px rgba(0,0,0,.28); }
+.stakes { width: 360px; flex: 0 0 auto; }
+.stepper { display: flex; align-items: center; justify-content: space-between; height: 54px; margin-bottom: 14px; padding: 0 13px; }
+.stepper button { height: 40px; padding: 0 16px; background: #686868; }
+.stake-row { display: flex; gap: 12px; }
+.stake-row button { height: 48px; min-width: 78px; padding: 0 10px; font-size: 19px; }
+.selected { background: #707070 !important; outline: 2px solid rgba(255,255,255,.06); }
+.difficulty { flex: 1 1 auto; min-width: 250px; }
+.difficulty-heading { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 18px; align-items: start; margin: 0 0 14px; font-size: 18px; }
+.difficulty-heading small { color: #bbb; font-size: 18px; line-height: 1.05; text-align: right; }
+.difficulty-tabs { display: grid; grid-template-columns: repeat(4,1fr); overflow: hidden; }
+.difficulty-tabs button { min-height: 46px; color: #bbb; background: transparent; }
+select { display: none; }
+.autoplay { flex: 0 0 98px; height: 98px; padding: 22px; background: #4b5064; }
+.autoplay svg { display: block; width: 100%; height: 100%; overflow: visible; fill: none; stroke: #fff; stroke-linecap: round; stroke-linejoin: round; stroke-width: 7px; }
+.autoplay .autoplay-arrow, .autoplay .autoplay-play { fill: #fff; stroke: none; }
+.primary { display: flex; gap: 16px; height: 98px; flex: 0 0 330px; }
+.controls.round-active .primary { flex-basis: 430px; }
+.primary button { height: 100%; border-radius: 16px; }
+.play, .go { background: #3dcc5e !important; font-size: 44px; }
+.play { width: 100%; }
+.cashout { width: 175px; background: #ffd15c !important; color: #171b27; font-size: 24px; }
+.cashout b { font-size: 27px; }
+.go { flex: 1; min-width: 220px; }
+@media (max-width: 999px) {
+  .topbar { height: 88px; padding: 0 28px; }
+  .logo-desktop { display: none; }
+  .logo-mobile { display: block; width: 146px; }
+  .how, .icon:first-of-type { display: none; }
+  .pool { min-width: 360px; height: 65px; font-size: 34px; }
+  .header-actions { gap: 25px; }
+  .icon { width: auto; background: transparent; font-size: 42px; }
+  #canvas-host { inset: 88px 0 560px; }
+  .controls-shell { height: 560px; padding: 28px 42px; }
+  .controls { display: grid; grid-template-columns: 1fr 140px; grid-template-rows: auto auto 118px; gap: 22px; padding: 28px 24px; }
+  .stakes { width: 100%; grid-column: 1 / 3; }
+  .stepper { height: 86px; margin-bottom: 22px; font-size: 30px; }
+  .stepper button { height: 60px; font-size: 25px; }
+  .stake-row { gap: 22px; }
+  .stake-row button { flex: 1; height: 82px; font-size: 30px; }
+  .stake-row span { width: 40px; height: 40px; font-size: 26px; }
+  .difficulty { grid-column: 1 / 3; min-width: 0; }
+  .difficulty-heading, .difficulty-tabs { display: none; }
+  select { display: block; width: 100%; height: 84px; padding: 0 42px; font-size: 30px; }
+  .autoplay { grid-column: 1; grid-row: 3; width: 140px; height: 118px; padding: 25px 32px; }
+  .primary { grid-column: 1 / 3; grid-row: 3; height: 118px; margin-left: 165px; flex: auto; }
+  .controls.round-active .difficulty { margin-left: 0; }
+  .controls.round-active .primary { margin-left: 0; }
+  .play, .go { font-size: 54px; }
+  .cashout { width: 45%; font-size: 29px; }
+  .go { width: 55%; min-width: 0; }
+}

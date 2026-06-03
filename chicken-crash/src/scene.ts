@@ -4,8 +4,17 @@ import { multiplierFor, ROAD_HEIGHT, ROUTE_STEPS, STEP_WIDTH, Difficulty } from 
 import { playSound } from './audio';
 
 type Frame = { x: number; y: number; w: number; h: number };
-type StepView = { root: Container; medal: Sprite; label: Text; vent: Sprite };
+type StepQuality = 'muted' | 'active' | 'passed' | 'hidden';
+type StepView = {
+  root: Container;
+  medal: Sprite;
+  label: Text;
+  vent: Sprite;
+  quality: StepQuality;
+  flipToken: number;
+};
 type AmbientVehicle = { sprite: Sprite; speed: number; stepIndex: number; stopY?: number; stopped?: boolean };
+type JumpOptions = { placeBarrier?: boolean };
 type VideoIdleAtlas = {
   frameWidth: number;
   frameHeight: number;
@@ -20,8 +29,12 @@ const MANHOLE_Y = 550;
 const CHICKEN_Y = 580;
 const MUTED_TINT = 0xe4e1dd;
 const BARRIER_STOP_Y = 118;
-const VEHICLE_BLOCK_TOP = MANHOLE_Y - 125;
-const VEHICLE_BLOCK_BOTTOM = CHICKEN_Y + 115;
+const MANHOLE_SCALE = 0.42;
+const HATCH_FLIP_MS = 260;
+const FINISH_WALK_SPEED_PX_PER_SECOND = 115;
+const FINISH_WALK_MIN_MS = 4200;
+const FINISH_WALK_MAX_MS = 6200;
+const MULTIPLIER_BADGE_Y = CHICKEN_Y + 165;
 const USE_VIDEO_CHICKEN = new URLSearchParams(window.location.search).has('videoChicken');
 const frames = {
   lamp: { x: 0, y: 0, w: 455, h: 770 },
@@ -29,12 +42,15 @@ const frames = {
   taxi: { x: 935, y: 0, w: 335, h: 590 },
   police: { x: 1295, y: 0, w: 390, h: 590 },
   barrier: { x: 19, y: 786, w: 511, h: 256 },
+  multiplierBadge: { x: 550, y: 760, w: 364, h: 247 },
   fireTruck: { x: 0, y: 1120, w: 420, h: 820 },
   iceTruck2: { x: 430, y: 1070, w: 400, h: 780 },
   greenTruck: { x: 845, y: 1030, w: 380, h: 700 },
   vent: { x: 1386, y: 589, w: 433, h: 426 },
   medal: { x: 1386, y: 1025, w: 433, h: 433 },
 } satisfies Record<string, Frame>;
+const HATCH_TOP_Y = MANHOLE_Y - (frames.vent.h * MANHOLE_SCALE) / 2;
+const HATCH_BOTTOM_Y = MANHOLE_Y + (frames.vent.h * MANHOLE_SCALE) / 2;
 
 const crop = (texture: Texture, frame: Frame) => new Texture({
   source: texture.source,
@@ -59,11 +75,14 @@ function label(value: string, size: number, color = '#e7e6e2') {
 export class GameScene {
   private app = new Application();
   private world = new Container();
+  private overlay = new Container();
   private route = new Container();
   private vehicles = new Container();
+  private multiplierBadge = new Container();
   private chicken = new Container();
   private chickenParts: Container[] = [];
   private steps: StepView[] = [];
+  private multiplierText!: Text;
   private objectTexture!: Texture;
   private chickenTexture!: Texture;
   private videoChickenTexture?: Texture;
@@ -71,20 +90,34 @@ export class GameScene {
   private spineChicken?: Spine;
   private startTexture!: Texture;
   private finishTexture!: Texture;
+  private winNotificationTexture!: Texture;
+  private winNotificationMobileTexture!: Texture;
   private viewWidth = 1200;
+  private viewHeight = ROAD_HEIGHT;
   private worldScale = 1;
   private currentStep = -1;
   private ambientVehicles: AmbientVehicle[] = [];
+  private activeVehicleSteps = new Set<number>();
+  private pendingCrashVehicle?: AmbientVehicle;
   private ambientSpawnElapsed = 0;
 
   async mount(host: HTMLElement, difficulty: Difficulty) {
     await this.app.init({ width: host.clientWidth, height: host.clientHeight, background: '#777370', antialias: true });
     host.appendChild(this.app.canvas);
-    [this.objectTexture, this.chickenTexture, this.startTexture, this.finishTexture] = await Promise.all([
+    [
+      this.objectTexture,
+      this.chickenTexture,
+      this.startTexture,
+      this.finishTexture,
+      this.winNotificationTexture,
+      this.winNotificationMobileTexture,
+    ] = await Promise.all([
       Assets.load(`${import.meta.env.BASE_URL}assets/objects-sprite.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/chicken-sprite.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/start-bg.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/finish-bg.png`),
+      Assets.load(`${import.meta.env.BASE_URL}assets/win-notification.png`),
+      Assets.load(`${import.meta.env.BASE_URL}assets/win-notification-mobile.png`),
     ]);
     if (USE_VIDEO_CHICKEN) {
       [this.videoChickenTexture, this.videoChickenAtlas] = await Promise.all([
@@ -97,9 +130,10 @@ export class GameScene {
       Assets.add({ alias: 'spineChickenAtlas', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.atlas` });
       await Assets.load(['spineChickenData', 'spineChickenAtlas']);
     }
-    this.app.stage.addChild(this.world);
+    this.app.stage.addChild(this.world, this.overlay);
     this.drawRoad();
-    this.world.addChild(this.route, this.vehicles, this.chicken);
+    this.buildMultiplierBadge(difficulty);
+    this.world.addChild(this.route, this.multiplierBadge, this.chicken, this.vehicles);
     this.buildRoute(difficulty);
     this.buildChicken();
     this.reset();
@@ -112,82 +146,123 @@ export class GameScene {
     this.worldScale = host.clientHeight / ROAD_HEIGHT;
     this.world.scale.set(this.worldScale);
     this.viewWidth = host.clientWidth;
+    this.viewHeight = host.clientHeight;
     this.positionCamera(this.currentStep, true);
   }
 
   hasVehicleOnStep(stepIndex: number) {
-    return this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex && !vehicle.sprite.destroyed);
+    return this.activeVehicleSteps.has(stepIndex)
+      || this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex && !vehicle.sprite.destroyed);
+  }
+
+  isStepBlockedForJump(stepIndex: number) {
+    return this.hasBlockingTraffic(stepIndex);
+  }
+
+  hasUnstoppableVehicleOnStep(stepIndex: number) {
+    return Boolean(this.findCrushCandidateVehicle(stepIndex));
+  }
+
+  hasVehicleThreatOnStep(stepIndex: number) {
+    return Boolean(this.findCrushImpactVehicle(stepIndex));
+  }
+
+  prepareVehicleCrash(stepIndex: number) {
+    const vehicle = this.findCrushCandidateVehicle(stepIndex);
+    if (!vehicle) return false;
+    this.pendingCrashVehicle = vehicle;
+    vehicle.stopY = CHICKEN_Y;
+    return true;
+  }
+
+  prepareBarrierStop(stepIndex: number) {
+    const vehicle = this.findBarrierCandidateVehicle(stepIndex);
+    if (!vehicle) return false;
+    vehicle.stopY = BARRIER_STOP_Y;
+    return true;
   }
 
   reset(difficulty?: Difficulty) {
     this.currentStep = -1;
     this.world.x = 0;
     this.steps.forEach((step, index) => {
-      step.medal.visible = false;
-      step.vent.visible = true;
-      step.label.visible = true;
-      step.vent.tint = MUTED_TINT;
-      step.label.tint = MUTED_TINT;
+      step.flipToken += 1;
+      step.root.scale.x = 1;
+      step.quality = 'muted';
+      this.applyStepQuality(step, 'muted');
       if (difficulty) step.label.text = `${multiplierFor(difficulty, index).toFixed(2)}x`;
     });
     this.route.children.filter((child) => child.label === 'barrier').forEach((child) => child.destroy());
     this.vehicles.removeChildren().forEach((child) => child.destroy());
     this.ambientVehicles = [];
+    this.activeVehicleSteps.clear();
+    this.pendingCrashVehicle = undefined;
     this.ambientSpawnElapsed = 0;
     this.restoreChicken();
     this.chicken.position.set(180, CHICKEN_Y);
+    this.updateCurrentMultiplier(difficulty ?? 'easy', 0);
+    this.syncMultiplierBadge();
+    this.multiplierBadge.visible = false;
   }
 
-  async jumpTo(stepIndex: number, difficulty: Difficulty) {
+  async jumpTo(stepIndex: number, difficulty: Difficulty, options: JumpOptions = {}) {
     const fromX = this.chicken.x;
     const targetX = WORLD_START + stepIndex * STEP_WIDTH;
-    await this.waitForStepTraffic(stepIndex);
     playSound('jump');
     this.setSpineAnimation('jump', false);
     await this.animate(560, (progress) => {
       this.chicken.x = fromX + (targetX - fromX) * ease(progress);
       this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
       this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
+      this.syncMultiplierBadge();
       this.positionCamera(stepIndex, false);
     });
     this.chicken.y = CHICKEN_Y;
     this.chicken.rotation = 0;
     this.currentStep = stepIndex;
+    this.updateCurrentMultiplier(difficulty, stepIndex);
+    this.syncMultiplierBadge();
+    this.multiplierBadge.visible = stepIndex < ROUTE_STEPS - 1;
     this.setSpineAnimation('idle', true);
     this.positionCamera(stepIndex, true);
     if (stepIndex > 0) this.passStep(stepIndex - 1);
     this.hideCurrentStep(stepIndex);
-    if (stepIndex < ROUTE_STEPS - 1) this.addBarrier(stepIndex);
+    if (options.placeBarrier !== false && stepIndex < ROUTE_STEPS - 1 && !this.findCrushImpactVehicle(stepIndex)) {
+      this.addBarrier(stepIndex);
+    }
     this.updateRouteHighlights(stepIndex + 1);
   }
 
   async crash(stepIndex: number) {
     const targetX = WORLD_START + stepIndex * STEP_WIDTH;
     const fromX = this.chicken.x;
-    await this.waitForStepTraffic(stepIndex);
     playSound('jump');
     this.setSpineAnimation('jump', false);
     await this.animate(560, (progress) => {
       this.chicken.x = fromX + (targetX - fromX) * ease(progress);
       this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
       this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
+      this.syncMultiplierBadge();
       this.positionCamera(stepIndex, false);
     });
     this.chicken.y = CHICKEN_Y;
     this.chicken.rotation = 0;
     this.currentStep = stepIndex;
+    this.syncMultiplierBadge();
+    this.multiplierBadge.visible = stepIndex < ROUTE_STEPS - 1;
     this.positionCamera(stepIndex, true);
     if (stepIndex > 0) this.passStep(stepIndex - 1);
     this.hideCurrentStep(stepIndex);
     this.updateRouteHighlights(stepIndex + 1);
 
-    await this.sendVehicle(targetX, () => {
+    await this.sendVehicle(stepIndex, () => {
       playSound('lose');
       if (this.spineChicken) this.setSpineAnimation('death', false);
       else {
         this.chicken.visible = false;
         this.spawnCrashParts();
       }
+      this.multiplierBadge.visible = false;
     });
     if (this.spineChicken) {
       await sleep(650);
@@ -204,33 +279,95 @@ export class GameScene {
     await sleep(450);
   }
 
+  async crashWithExistingVehicle(stepIndex: number) {
+    const vehicle = this.findCrushImpactVehicle(stepIndex);
+    if (!vehicle) return false;
+    this.pendingCrashVehicle = undefined;
+    this.removeBarrier(stepIndex);
+    this.multiplierBadge.visible = false;
+    await new Promise<void>((resolve) => {
+      const tick = () => {
+        if (vehicle.sprite.destroyed || vehicle.sprite.y >= CHICKEN_Y) resolve();
+        else requestAnimationFrame(tick);
+      };
+      tick();
+    });
+    if (vehicle.sprite.destroyed) return false;
+    vehicle.sprite.y = Math.max(vehicle.sprite.y, CHICKEN_Y);
+    vehicle.stopped = true;
+    playSound('lose');
+    if (this.spineChicken) {
+      this.setSpineAnimation('death', false);
+      await sleep(650);
+      return true;
+    }
+    this.chicken.visible = false;
+    this.spawnCrashParts();
+    await this.animate(900, (progress) => {
+      this.chickenParts.forEach((part, index) => {
+        part.x += (index - 3) * 1.8;
+        part.y += -6 + progress * 12 + index * 0.35;
+        part.rotation += (index % 2 ? 1 : -1) * 0.09;
+        part.alpha = 1 - Math.max(0, progress - 0.64) * 2.7;
+      });
+    });
+    await sleep(450);
+    return true;
+  }
+
   async finish(amount: number) {
     const fromX = this.chicken.x;
     const finishX = fromX + this.viewWidth / this.worldScale + 360;
+    const finishDistancePx = (finishX - fromX) * this.worldScale;
+    const finishDuration = Math.min(
+      FINISH_WALK_MAX_MS,
+      Math.max(FINISH_WALK_MIN_MS, (finishDistancePx / FINISH_WALK_SPEED_PX_PER_SECOND) * 1000),
+    );
     this.setSpineAnimation('win', true);
+    this.multiplierBadge.visible = false;
     this.chicken.y = CHICKEN_Y;
     this.chicken.rotation = 0;
-    await this.animate(1300, (progress) => {
-      this.chicken.x = fromX + (finishX - fromX) * ease(progress);
+    await this.animate(finishDuration, (progress) => {
+      this.chicken.x = fromX + (finishX - fromX) * progress;
       this.chicken.y = CHICKEN_Y;
+      this.syncMultiplierBadge();
     });
+    await this.showWinNotification(amount, true);
+  }
+
+  async showWinNotification(amount: number, playWinSound = false) {
+    this.clearOverlay();
+    this.multiplierBadge.visible = false;
+    const isMobile = this.viewWidth < 1000;
+    const texture = isMobile ? this.winNotificationMobileTexture : this.winNotificationTexture;
     const notification = new Container();
-    const plate = Sprite.from(`${import.meta.env.BASE_URL}assets/win-notification.png`);
+    const plate = new Sprite(texture);
     plate.anchor.set(0.5);
-    plate.scale.set(0.82);
-    const title = label(`YOU WON $${amount.toFixed(2)}`, 42, '#ffffff');
+    const maxWidth = Math.min(this.viewWidth * (isMobile ? 0.84 : 0.58), texture.width);
+    const plateScale = maxWidth / texture.width;
+    plate.scale.set(plateScale);
+
+    const title = label('YOU WON', isMobile ? 28 : 36, '#ffffff');
     title.anchor.set(0.5);
-    notification.addChild(plate, title);
-    notification.position.set((-this.world.x + this.viewWidth / 2) / this.worldScale, 320);
+    title.position.set(0, isMobile ? -40 : -50);
+
+    const amountText = label(`$${amount.toFixed(2)}`, isMobile ? 50 : 62, '#ffffff');
+    amountText.anchor.set(0.5);
+    amountText.position.set(0, isMobile ? 20 : 28);
+
+    notification.addChild(plate, title, amountText);
+    notification.position.set(this.viewWidth / 2, Math.min(this.viewHeight * 0.5, isMobile ? 270 : 330));
     notification.alpha = 0;
-    this.world.addChild(notification);
-    playSound('win');
+    notification.scale.set(0.84);
+    this.overlay.addChild(notification);
+    if (playWinSound) playSound('win');
     await this.animate(380, (progress) => {
       notification.alpha = progress;
-      notification.scale.set(0.8 + progress * 0.2);
+      notification.scale.set(0.84 + progress * 0.16);
     });
     await sleep(1600);
     notification.destroy({ children: true });
+    this.clearOverlay();
   }
 
   private drawRoad() {
@@ -259,17 +396,36 @@ export class GameScene {
       root.position.set(WORLD_START + index * STEP_WIDTH, MANHOLE_Y);
       const vent = new Sprite(ventTexture);
       vent.anchor.set(0.5);
-      vent.scale.set(0.42);
+      vent.scale.set(MANHOLE_SCALE);
       const medal = new Sprite(medalTexture);
       medal.anchor.set(0.5);
-      medal.scale.set(0.42);
+      medal.scale.set(MANHOLE_SCALE);
       medal.visible = false;
       const amount = label(`${multiplierFor(difficulty, index).toFixed(2)}x`, 43);
       amount.anchor.set(0.5);
       root.addChild(vent, medal, amount);
       this.route.addChild(root);
-      this.steps.push({ root, medal, label: amount, vent });
+      this.steps.push({ root, medal, label: amount, vent, quality: 'muted', flipToken: 0 });
     }
+  }
+
+  private buildMultiplierBadge(difficulty: Difficulty) {
+    const plate = new Sprite(crop(this.objectTexture, frames.multiplierBadge));
+    plate.anchor.set(0.5);
+    this.multiplierText = label(`${multiplierFor(difficulty, 0).toFixed(2)}x`, 98, '#ffffff');
+    this.multiplierText.anchor.set(0.5);
+    this.multiplierText.position.set(0, 24);
+    this.multiplierBadge.scale.set(0.52);
+    this.multiplierBadge.addChild(plate, this.multiplierText);
+  }
+
+  private updateCurrentMultiplier(difficulty: Difficulty, stepIndex: number) {
+    if (!this.multiplierText) return;
+    this.multiplierText.text = `${multiplierFor(difficulty, Math.max(0, stepIndex)).toFixed(2)}x`;
+  }
+
+  private syncMultiplierBadge() {
+    this.multiplierBadge.position.set(this.chicken.x, MULTIPLIER_BADGE_Y);
   }
 
   private buildChicken() {
@@ -332,25 +488,56 @@ export class GameScene {
   }
 
   private passStep(index: number) {
-    const step = this.steps[index];
-    step.vent.visible = false;
-    step.label.visible = false;
-    step.medal.visible = true;
+    this.setStepQuality(index, 'passed');
   }
 
   private hideCurrentStep(index: number) {
-    const step = this.steps[index];
-    step.vent.visible = false;
-    step.label.visible = false;
-    step.medal.visible = false;
+    this.setStepQuality(index, 'hidden', false);
   }
 
   private updateRouteHighlights(activeStep: number) {
     this.steps.forEach((step, index) => {
-      const active = index === activeStep;
-      step.vent.tint = active ? 0xffffff : MUTED_TINT;
-      step.label.tint = active ? 0xffffff : MUTED_TINT;
+      if (step.quality === 'passed' || step.quality === 'hidden') return;
+      this.setStepQuality(index, index === activeStep ? 'active' : 'muted', false);
     });
+  }
+
+  private setStepQuality(index: number, quality: StepQuality, animated = true) {
+    const step = this.steps[index];
+    if (!step || step.quality === quality) return;
+    step.quality = quality;
+    step.flipToken += 1;
+    const token = step.flipToken;
+    if (!animated) {
+      step.root.scale.x = 1;
+      this.applyStepQuality(step, quality);
+      return;
+    }
+
+    let changed = false;
+    void this.animate(HATCH_FLIP_MS, (progress) => {
+      if (step.flipToken !== token) return;
+      if (!changed && progress >= 0.5) {
+        changed = true;
+        this.applyStepQuality(step, quality);
+      }
+      const fold = progress < 0.5 ? 1 - progress * 2 : (progress - 0.5) * 2;
+      step.root.scale.x = Math.max(0.08, fold);
+    }).then(() => {
+      if (step.flipToken !== token) return;
+      if (!changed) this.applyStepQuality(step, quality);
+      step.root.scale.x = 1;
+    });
+  }
+
+  private applyStepQuality(step: StepView, quality: StepQuality) {
+    const hatchVisible = quality === 'muted' || quality === 'active';
+    const hatchTint = quality === 'active' ? 0xffffff : MUTED_TINT;
+    step.vent.visible = hatchVisible;
+    step.label.visible = hatchVisible;
+    step.medal.visible = quality === 'passed';
+    step.vent.tint = hatchTint;
+    step.label.tint = hatchTint;
   }
 
   private addBarrier(index: number) {
@@ -362,25 +549,38 @@ export class GameScene {
     this.route.addChild(barrier);
   }
 
-  private async sendVehicle(targetX: number, onImpact?: () => void) {
+  private removeBarrier(index: number) {
+    const x = WORLD_START + index * STEP_WIDTH;
+    this.route.children
+      .filter((child) => child.label === 'barrier' && Math.abs(child.x - x) < 1)
+      .forEach((child) => child.destroy());
+  }
+
+  private async sendVehicle(stepIndex: number, onImpact?: () => void) {
     const carFrames = [frames.taxi, frames.police, frames.fireTruck, frames.greenTruck];
     const carFrame = carFrames[Math.floor(Math.random() * carFrames.length)];
     const car = new Sprite(crop(this.objectTexture, carFrame));
+    const targetX = WORLD_START + stepIndex * STEP_WIDTH;
     car.anchor.set(0.5);
     car.scale.set(carFrame === frames.fireTruck ? 0.36 : 0.43);
     car.position.set(targetX, -260);
     this.vehicles.addChild(car);
+    this.activeVehicleSteps.add(stepIndex);
     playSound('car');
     let impacted = false;
-    await this.animate(720, (progress) => {
-      car.y = -260 + progress * 1100;
-      if (!impacted && car.y >= CHICKEN_Y) {
-        impacted = true;
-        onImpact?.();
-      }
-    });
-    if (!impacted) onImpact?.();
-    car.destroy();
+    try {
+      await this.animate(720, (progress) => {
+        car.y = -260 + progress * 1100;
+        if (!impacted && car.y >= CHICKEN_Y) {
+          impacted = true;
+          onImpact?.();
+        }
+      });
+      if (!impacted) onImpact?.();
+    } finally {
+      car.destroy();
+      this.activeVehicleSteps.delete(stepIndex);
+    }
   }
 
   private updateAmbientVehicles(deltaMS: number) {
@@ -391,13 +591,8 @@ export class GameScene {
     }
     this.ambientVehicles = this.ambientVehicles.filter((vehicle) => {
       if (vehicle.stopped) return true;
-      if (vehicle.stepIndex <= this.currentStep && vehicle.stopY === undefined) {
+      if (vehicle.stepIndex <= this.currentStep && vehicle.stopY === undefined && vehicle.sprite.y < BARRIER_STOP_Y) {
         vehicle.stopY = BARRIER_STOP_Y;
-        if (vehicle.sprite.y >= BARRIER_STOP_Y) {
-          vehicle.sprite.y = BARRIER_STOP_Y;
-          vehicle.stopped = true;
-          return true;
-        }
       }
 
       const nextY = vehicle.sprite.y + vehicle.speed * deltaMS;
@@ -425,7 +620,7 @@ export class GameScene {
     const availableSteps = Array.from(
       { length: lastVisibleStep - firstVisibleStep + 1 },
       (_, index) => firstVisibleStep + index,
-    ).filter((stepIndex) => !this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex));
+    ).filter((stepIndex) => !this.hasVehicleOnStep(stepIndex));
     if (!availableSteps.length) return;
     const stepIndex = availableSteps[Math.floor(Math.random() * availableSteps.length)];
     const carFrame = [frames.taxi, frames.police, frames.iceTruck, frames.greenTruck][Math.floor(Math.random() * 4)];
@@ -443,23 +638,69 @@ export class GameScene {
     });
   }
 
-  private waitForStepTraffic(stepIndex: number) {
-    return new Promise<void>((resolve) => {
-      const tick = () => {
-        if (!this.hasBlockingTraffic(stepIndex)) resolve();
-        else requestAnimationFrame(tick);
-      };
-      tick();
-    });
-  }
-
   private hasBlockingTraffic(stepIndex: number) {
     return this.ambientVehicles.some((vehicle) => (
       vehicle.stepIndex === stepIndex
       && !vehicle.sprite.destroyed
-      && vehicle.sprite.y >= VEHICLE_BLOCK_TOP
-      && vehicle.sprite.y <= VEHICLE_BLOCK_BOTTOM
+      && this.vehicleOverlapsHatch(vehicle)
     ));
+  }
+
+  private findCrushCandidateVehicle(stepIndex: number) {
+    return this.ambientVehicles.find((vehicle) => (
+      vehicle.stepIndex === stepIndex
+      && !vehicle.stopped
+      && !vehicle.sprite.destroyed
+      && this.vehicleCanCrushIfJumpedInFront(vehicle)
+    ));
+  }
+
+  private findBarrierCandidateVehicle(stepIndex: number) {
+    return this.ambientVehicles.find((vehicle) => (
+      vehicle.stepIndex === stepIndex
+      && !vehicle.stopped
+      && !vehicle.sprite.destroyed
+      && vehicle.sprite.y < BARRIER_STOP_Y
+    ));
+  }
+
+  private findCrushImpactVehicle(stepIndex: number) {
+    if (
+      this.pendingCrashVehicle
+      && this.pendingCrashVehicle.stepIndex === stepIndex
+      && !this.pendingCrashVehicle.sprite.destroyed
+    ) {
+      return this.pendingCrashVehicle;
+    }
+    return this.ambientVehicles.find((vehicle) => (
+      vehicle.stepIndex === stepIndex
+      && !vehicle.stopped
+      && !vehicle.sprite.destroyed
+      && vehicle.stopY !== BARRIER_STOP_Y
+      && this.vehicleCanStillHitChicken(vehicle)
+    ));
+  }
+
+  private vehicleBounds(vehicle: AmbientVehicle) {
+    const halfHeight = vehicle.sprite.height / 2;
+    return {
+      top: vehicle.sprite.y - halfHeight,
+      bottom: vehicle.sprite.y + halfHeight,
+    };
+  }
+
+  private vehicleOverlapsHatch(vehicle: AmbientVehicle) {
+    const bounds = this.vehicleBounds(vehicle);
+    return bounds.bottom >= HATCH_TOP_Y && bounds.top <= HATCH_BOTTOM_Y;
+  }
+
+  private vehicleCanCrushIfJumpedInFront(vehicle: AmbientVehicle) {
+    return vehicle.sprite.y >= BARRIER_STOP_Y && vehicle.sprite.y < HATCH_TOP_Y;
+  }
+
+  private vehicleCanStillHitChicken(vehicle: AmbientVehicle) {
+    const bounds = this.vehicleBounds(vehicle);
+    return bounds.bottom >= BARRIER_STOP_Y && bounds.top <= HATCH_BOTTOM_Y;
   }
 
   private spawnCrashParts() {
@@ -489,6 +730,10 @@ export class GameScene {
     this.chickenParts = [];
     this.chicken.visible = true;
     this.setSpineAnimation('idle', true);
+  }
+
+  private clearOverlay() {
+    this.overlay.removeChildren().forEach((child) => child.destroy({ children: true }));
   }
 
   private setSpineAnimation(name: string, loop: boolean) {

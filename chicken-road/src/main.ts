@@ -9,6 +9,7 @@ type LayoutInfo = {
   worldViewWidth: number;
   worldScale: number;
   screenWidth: number;
+  screenHeight: number;
   groundLiftY: number;
 };
 type ButtonHandler = () => void;
@@ -162,10 +163,11 @@ const MINI_FIRE_FRAMES: FrameRect[] = [
 const MINI_FIRE_CHANCE = 0.32;
 const LIVE_WIN_INTERVAL_MS = 3200;
 const LIVE_WIN_VISIBLE_MS = 2200;
+const MAX_RENDER_RESOLUTION = 3;
 const COMPACT_CONTROLS_BREAKPOINT = 1000;
 const COMPACT_CONTROLS_GAP = 20;
 const COMPACT_CONTROLS_H = 340;
-const COMPACT_CONTROLS_Y = DESIGN_HEIGHT - COMPACT_CONTROLS_H - COMPACT_CONTROLS_GAP;
+const COMPACT_CONTROLS_MIN_H = 280;
 const COMPACT_GROUND_LIFT_Y = 0;
 const COMPACT_WORLD_SCALE = 0.8;
 const LIVE_WIN_MOCKS: LiveWin[] = [
@@ -220,6 +222,14 @@ function gridFrames(columns: number, rows: number, width: number, height: number
     }
   }
   return frames;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function lerp(from: number, to: number, progress: number): number {
+  return from + (to - from) * progress;
 }
 
 function text(value: string, size: number, fill: number | string, weight: FontWeight = '800', stroke = 0x22273d, strokeWidth = 0): Text {
@@ -958,28 +968,48 @@ function drawCompactDifficulty(parent: Container, difficulty: Difficulty, enable
 }
 
 function drawCompactControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, x: number, y: number, w: number, h: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
+  const density = clamp((h - COMPACT_CONTROLS_MIN_H) / (COMPACT_CONTROLS_H - COMPACT_CONTROLS_MIN_H), 0, 1);
   const padX = Math.max(18, Math.min(32, w * 0.04));
   const contentX = x + padX;
   const contentW = w - padX * 2;
-  const topPad = Math.max(14, Math.min(20, h * 0.06));
-  const bottomPad = Math.max(14, Math.min(20, h * 0.06));
-  const selectorH = Math.max(44, Math.min(54, h * 0.16));
-  const stakeGap = Math.max(12, Math.min(18, h * 0.05));
-  const stakeH = Math.max(46, Math.min(56, h * 0.16));
-  const difficultyGap = Math.max(14, Math.min(20, h * 0.055));
-  const difficultyH = Math.max(52, Math.min(62, h * 0.18));
-  const actionGap = Math.max(18, Math.min(24, h * 0.065));
+  const topPad = lerp(10, 20, density);
+  const bottomPad = lerp(10, 20, density);
+  const selectorH = lerp(42, 54, density);
+  const stakeGap = lerp(8, 18, density);
+  const stakeH = lerp(42, 56, density);
+  const difficultyGap = lerp(10, 20, density);
+  const difficultyH = lerp(48, 62, density);
+  const actionGap = lerp(12, 24, density);
   const selectorY = y + topPad;
   const stakeY = selectorY + selectorH + stakeGap;
   const difficultyY = stakeY + stakeH + difficultyGap;
   const actionY = difficultyY + difficultyH + actionGap;
-  const actionH = Math.max(58, y + h - actionY - bottomPad);
+  const actionH = Math.max(54, y + h - actionY - bottomPad);
   const stakeEnabled = state === 'ready';
 
   drawWagerSelector(root, contentX, selectorY, contentW, selectorH, stake, stakeEnabled, () => onStake(STAKE_VALUES[0]), () => onStake(STAKE_VALUES[STAKE_VALUES.length - 1]));
   drawStakeRow(root, contentX, stakeY, contentW, stakeH, stake, stakeEnabled, onStake);
   drawCompactDifficulty(root, difficulty, stakeEnabled, contentX, difficultyY, contentW, difficultyH, onDifficulty);
   drawActions(root, state, cashout, contentX, actionY, contentW, actionH, Math.max(14, Math.min(28, contentW * 0.04)), state !== 'ready', onGo, onAutoRun, onCashOut);
+}
+
+function compactControlsLayout(viewWidth: number, screenWidth: number, screenHeight: number) {
+  const tightWidth = clamp((620 - viewWidth) / 160, 0, 1);
+  const tightHeight = clamp((760 - screenHeight) / 160, 0, 1);
+  const pressure = Math.max(tightWidth, tightHeight);
+  const cardHeight = Math.round(lerp(COMPACT_CONTROLS_H, COMPACT_CONTROLS_MIN_H, pressure));
+  const gap = Math.round(lerp(COMPACT_CONTROLS_GAP, 12, pressure));
+  const cardY = DESIGN_HEIGHT - cardHeight - gap;
+  const bottomY = Math.min(BOTTOM_Y, cardY - gap);
+  const margin = Math.max(18, Math.min(64, viewWidth * lerp(0.085, 0.055, pressure)));
+
+  return {
+    bottomY,
+    cardX: margin,
+    cardY,
+    cardWidth: Math.max(0, viewWidth - margin * 2),
+    cardHeight,
+  };
 }
 
 function drawWideControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, x: number, y: number, w: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
@@ -1006,19 +1036,19 @@ function drawWideControls(root: Container, state: GameState, cashout: string, di
   drawActions(root, state, cashout, actionsX, contentY + 8, actionsW, 142, actionsGap, state !== 'ready', onGo, onAutoRun, onCashOut);
 }
 
-function drawControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, viewWidth: number, screenWidth: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
+function drawControls(root: Container, state: GameState, cashout: string, difficulty: Difficulty, stake: StakeAmount, viewWidth: number, screenWidth: number, screenHeight: number, onGo: ButtonHandler, onAutoRun: ButtonHandler, onCashOut: ButtonHandler, onDifficulty: (difficulty: Difficulty) => void, onStake: (stake: StakeAmount) => void): void {
   const isCompact = screenWidth < COMPACT_CONTROLS_BREAKPOINT;
-  const compactCardY = COMPACT_CONTROLS_Y;
-  const bottomY = isCompact ? Math.min(BOTTOM_Y, compactCardY - COMPACT_CONTROLS_GAP) : BOTTOM_Y;
+  const compactLayout = isCompact ? compactControlsLayout(viewWidth, screenWidth, screenHeight) : undefined;
+  const bottomY = compactLayout?.bottomY ?? BOTTOM_Y;
   const bottom = new Graphics();
   bottom.rect(0, bottomY, viewWidth, DESIGN_HEIGHT - bottomY).fill(0x121522);
   root.addChild(bottom);
 
-  const margin = isCompact ? Math.max(20, Math.min(80, viewWidth * 0.085)) : Math.max(24, Math.min(58, viewWidth * 0.028));
-  const cardX = margin;
-  const cardWidth = Math.max(0, viewWidth - margin * 2);
-  const cardY = isCompact ? compactCardY : 814;
-  const cardHeight = isCompact ? COMPACT_CONTROLS_H : 198;
+  const margin = Math.max(24, Math.min(58, viewWidth * 0.028));
+  const cardX = compactLayout?.cardX ?? margin;
+  const cardWidth = compactLayout?.cardWidth ?? Math.max(0, viewWidth - margin * 2);
+  const cardY = compactLayout?.cardY ?? 814;
+  const cardHeight = compactLayout?.cardHeight ?? 198;
 
   panel(root, cardX, cardY, cardWidth, cardHeight, 26, 0x43485d, 0x61735f, 0.96);
 
@@ -1043,12 +1073,10 @@ async function boot() {
     resizeTo: window,
     background: '#111421',
     antialias: true,
-    resolution: Math.min(window.devicePixelRatio, 2),
+    resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION),
     autoDensity: true,
   });
   document.body.appendChild(app.canvas);
-  app.canvas.style.width = '100vw';
-  app.canvas.style.height = '100vh';
 
   const worldLayer = new Container();
   const uiLayer = new Container();
@@ -1088,7 +1116,7 @@ async function boot() {
   let liveWinVisibleUntil = initialNow + LIVE_WIN_VISIBLE_MS;
   let nextLiveWinAt = initialNow + LIVE_WIN_INTERVAL_MS;
   let pads: PadView[] = [];
-  let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH, worldViewWidth: DESIGN_WIDTH, worldScale: 1, screenWidth: DESIGN_WIDTH, groundLiftY: 0 };
+  let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH, worldViewWidth: DESIGN_WIDTH, worldScale: 1, screenWidth: DESIGN_WIDTH, screenHeight: DESIGN_HEIGHT, groundLiftY: 0 };
   let cameraX = 0;
   let targetCameraX = 0;
   const [chickenFrames, objectSprites, decorSprites, fireSprites] = await Promise.all([
@@ -1167,6 +1195,8 @@ async function boot() {
 
   function resizeRendererToViewport() {
     const { width, height } = viewportSize();
+    app.canvas.style.width = `${width}px`;
+    app.canvas.style.height = `${height}px`;
     if (app.screen.width !== width || app.screen.height !== height) {
       app.renderer.resize(width, height);
     }
@@ -1182,6 +1212,7 @@ async function boot() {
       worldViewWidth: app.screen.width / (scale * worldScale),
       worldScale,
       screenWidth: app.screen.width,
+      screenHeight: app.screen.height,
       groundLiftY: isCompact ? COMPACT_GROUND_LIFT_Y : 0,
     };
     worldLayer.scale.set(scale * worldScale);
@@ -1254,7 +1285,7 @@ async function boot() {
       }
     }
 
-    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, stakeAmount, layoutInfo.viewWidth, layoutInfo.screenWidth, advance, startAutoRun, cashOut, setDifficulty, setStake);
+    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, stakeAmount, layoutInfo.viewWidth, layoutInfo.screenWidth, layoutInfo.screenHeight, advance, startAutoRun, cashOut, setDifficulty, setStake);
     if (roundMessage) drawRoundMessage(uiLayer, layoutInfo.viewWidth, roundMessage);
     updateCameraTarget();
     applyCamera();

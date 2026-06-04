@@ -136,3 +136,36 @@ Before considering a deployment change complete:
 - Confirm relative assets load correctly from each final subdirectory.
 - Confirm the workflow uploads the shared Pages bundle.
 - Verify each published game at its final GitHub Pages URL after deployment.
+
+## Publication Final Response
+
+After saving and publishing changes, the final response must clearly report the
+publication result instead of only mentioning the playables that were most
+recently edited.
+
+Include:
+
+- The commit SHA and commit title for every commit created during the publish
+  sequence.
+- The pushed branch and remote.
+- The GitHub Actions Pages workflow status, including a link to the successful
+  run when available.
+- The local build or verification commands that were run.
+- Whether the working tree is clean after the push.
+- Every published playable URL, not only the changed projects:
+
+```text
+https://callkeeperofficial.github.io/playable-adds/chicken-road/
+https://callkeeperofficial.github.io/playable-adds/chicken-crash/
+https://callkeeperofficial.github.io/playable-adds/chicken-road-unfinished/
+https://callkeeperofficial.github.io/playable-adds/chicken-pilot/
+```
+
+- The root Pages index URL:
+
+```text
+https://callkeeperofficial.github.io/playable-adds/
+```
+
+When possible, verify the root index and every playable URL with an HTTP check
+after deployment, and mention the status codes in the final response.

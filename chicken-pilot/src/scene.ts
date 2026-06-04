@@ -13,7 +13,7 @@ type Frame = {
 type StepView = { root: Container; medal: Sprite; label: Text; vent: Sprite };
 type AmbientVehicle = { sprite: Container; speed: number; stepIndex: number; soundPlayed: boolean };
 type ChickenIdlePart = {
-  sprite: Sprite;
+  sprite: Container;
   x: number;
   y: number;
   rotation: number;
@@ -21,6 +21,51 @@ type ChickenIdlePart = {
   sway?: number;
   turn?: number;
   phase?: number;
+};
+type SpineBone = {
+  name: string;
+  parent?: string;
+  x?: number;
+  y?: number;
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+};
+type SpineSlot = {
+  name: string;
+  bone: string;
+  attachment?: string;
+};
+type SpineAttachment = {
+  type?: string;
+  path?: string;
+  uvs?: number[];
+  triangles?: number[];
+  vertices?: number[];
+  x?: number;
+  y?: number;
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+  width?: number;
+  height?: number;
+};
+type SpineSkin = {
+  name: string;
+  attachments: Record<string, Record<string, SpineAttachment>>;
+};
+type SpineSkeleton = {
+  bones: SpineBone[];
+  slots: SpineSlot[];
+  skins: SpineSkin[];
+};
+type SpineTransform = {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  tx: number;
+  ty: number;
 };
 
 const LOCATION_SCALE = 0.55;
@@ -41,6 +86,30 @@ const CAP_LABEL_SIZE = 28;
 const VEHICLE_BLOCK_TOP = MANHOLE_Y - 125;
 const VEHICLE_BLOCK_BOTTOM = CHICKEN_Y + 115;
 const CHICKEN_ASSET_SCALE = 0.5;
+const CHICKEN_TEXTURE_URL = `${import.meta.env.BASE_URL}assets/pilot-chicken-new.png`;
+const CHICKEN_JSON_URL = `${import.meta.env.BASE_URL}assets/pilot-chicken-new.json`;
+const NORMAL_CHICKEN_SLOTS = new Set([
+  'ArmLYellow2',
+  'LegLYellow',
+  'CombYellow',
+  'BodyYellow',
+  'LegRYellow',
+  'JacketYellow',
+  'ArmLRellow2',
+  'JacketTopL',
+  'JacketTopR',
+  'SunglassesYellow',
+  'WattleYellow',
+  'BeakInsideYellow',
+  'BeakBottomYellow',
+  'BeakTopYellow',
+  'ShoutingMouthTongueYellow',
+]);
+const ATTACHMENT_BY_SLOT: Record<string, string> = {
+  BeakInsideYellow: 'BeakInsideYellow',
+  ShoutingMouthTongueYellow: 'ShoutingMouthTongueYellow',
+};
+const QUAD_VERTICES = new Float32Array([-0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5]);
 const PLANE_ASSETS = [
   'plane-cargo@2x.png',
   'plane-double-engine@2x.png',
@@ -112,6 +181,137 @@ function parseAtlas(source: string) {
   return atlas;
 }
 
+function composeTransform(parent: SpineTransform, local: SpineTransform): SpineTransform {
+  return {
+    a: parent.a * local.a + parent.b * local.c,
+    b: parent.a * local.b + parent.b * local.d,
+    c: parent.c * local.a + parent.d * local.c,
+    d: parent.c * local.b + parent.d * local.d,
+    tx: parent.a * local.tx + parent.b * local.ty + parent.tx,
+    ty: parent.c * local.tx + parent.d * local.ty + parent.ty,
+  };
+}
+
+function localTransform(x = 0, y = 0, rotation = 0, scaleX = 1, scaleY = 1): SpineTransform {
+  const radians = rotation * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return {
+    a: cos * scaleX,
+    b: -sin * scaleY,
+    c: sin * scaleX,
+    d: cos * scaleY,
+    tx: x,
+    ty: y,
+  };
+}
+
+function transformPoint(transform: SpineTransform, x: number, y: number): [number, number] {
+  return [
+    transform.a * x + transform.b * y + transform.tx,
+    transform.c * x + transform.d * y + transform.ty,
+  ];
+}
+
+function buildSpineTransforms(skeleton: SpineSkeleton) {
+  const byName: Record<string, SpineTransform> = {};
+  const byIndex: SpineTransform[] = [];
+
+  skeleton.bones.forEach((bone, index) => {
+    const scaleX = bone.name === 'root' ? 1 : (bone.scaleX ?? 1);
+    const scaleY = bone.name === 'root' ? 1 : (bone.scaleY ?? 1);
+    const local = localTransform(bone.x ?? 0, bone.y ?? 0, bone.rotation ?? 0, scaleX, scaleY);
+    const world = bone.parent ? composeTransform(byName[bone.parent], local) : local;
+    byName[bone.name] = world;
+    byIndex[index] = world;
+  });
+
+  return { byName, byIndex };
+}
+
+function firstAttachmentName(attachments: Record<string, SpineAttachment>): string | undefined {
+  return Object.keys(attachments)[0];
+}
+
+function meshVerticesFromAttachment(
+  attachment: SpineAttachment,
+  slotTransform: SpineTransform,
+  boneTransforms: SpineTransform[],
+  vertexCount: number,
+): Float32Array {
+  const source = attachment.vertices;
+  if (!source?.length) {
+    const width = attachment.width ?? 10;
+    const height = attachment.height ?? 10;
+    const local = localTransform(attachment.x ?? 0, attachment.y ?? 0, attachment.rotation ?? 0, attachment.scaleX ?? 1, attachment.scaleY ?? 1);
+    const transform = composeTransform(slotTransform, local);
+    const vertices = new Float32Array(QUAD_VERTICES.length);
+    for (let index = 0; index < QUAD_VERTICES.length; index += 2) {
+      const [x, y] = transformPoint(transform, QUAD_VERTICES[index] * width, QUAD_VERTICES[index + 1] * height);
+      vertices[index] = x;
+      vertices[index + 1] = -y;
+    }
+    return vertices;
+  }
+
+  const vertices = new Float32Array(vertexCount * 2);
+  if (source.length === vertexCount * 2) {
+    for (let index = 0; index < source.length; index += 2) {
+      const [x, y] = transformPoint(slotTransform, source[index], source[index + 1]);
+      vertices[index] = x;
+      vertices[index + 1] = -y;
+    }
+    return vertices;
+  }
+
+  let sourceIndex = 0;
+  for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++) {
+    const influenceCount = source[sourceIndex++];
+    let worldX = 0;
+    let worldY = 0;
+
+    for (let influence = 0; influence < influenceCount; influence++) {
+      const boneIndex = source[sourceIndex++];
+      const localX = source[sourceIndex++];
+      const localY = source[sourceIndex++];
+      const weight = source[sourceIndex++];
+      const transform = boneTransforms[boneIndex];
+      const [x, y] = transformPoint(transform, localX, localY);
+      worldX += x * weight;
+      worldY += y * weight;
+    }
+
+    vertices[vertexIndex * 2] = worldX;
+    vertices[vertexIndex * 2 + 1] = -worldY;
+  }
+
+  return vertices;
+}
+
+function boundsFromVertices(vertices: Float32Array) {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (let index = 0; index < vertices.length; index += 2) {
+    const x = vertices[index];
+    const y = vertices[index + 1];
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  return {
+    x: (minX + maxX) / 2,
+    y: (minY + maxY) / 2,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
 function label(value: string, size: number, color = '#e7e6e2') {
   return new Text({
     text: value,
@@ -137,6 +337,7 @@ export class GameScene {
   private objectTexture!: Texture;
   private chickenTexture!: Texture;
   private chickenAtlas!: Record<string, Frame>;
+  private chickenSkeleton!: SpineSkeleton;
   private capNormalTexture!: Texture;
   private capGoldenTexture!: Texture;
   private confettiTexture!: Texture;
@@ -155,7 +356,14 @@ export class GameScene {
   private chickenIdleParts: ChickenIdlePart[] = [];
 
   async mount(host: HTMLElement, difficulty: Difficulty) {
-    await this.app.init({ width: host.clientWidth, height: host.clientHeight, background: '#777370', antialias: true });
+    await this.app.init({
+      width: host.clientWidth,
+      height: host.clientHeight,
+      background: '#777370',
+      antialias: true,
+      autoDensity: true,
+      resolution: Math.min(window.devicePixelRatio || 1, 3),
+    });
     host.appendChild(this.app.canvas);
     [
       this.objectTexture,
@@ -170,7 +378,7 @@ export class GameScene {
       this.roadLaneTexture,
     ] = await Promise.all([
       Assets.load(`${import.meta.env.BASE_URL}assets/objects-sprite.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/pilot-chicken-new.png`),
+      Assets.load(CHICKEN_TEXTURE_URL),
       Assets.load(`${import.meta.env.BASE_URL}assets/cap-normal@2x.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/cap-golden@2x.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/confetti@2x.png`),
@@ -180,8 +388,9 @@ export class GameScene {
       Assets.load(`${import.meta.env.BASE_URL}assets/finish-bg.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/road-lane.png`),
     ]);
-    [this.chickenAtlas, this.planeTextures] = await Promise.all([
+    [this.chickenAtlas, this.chickenSkeleton, this.planeTextures] = await Promise.all([
       fetch(`${import.meta.env.BASE_URL}assets/pilot-chicken-new.atlas`).then((response) => response.text()).then(parseAtlas),
+      fetch(CHICKEN_JSON_URL).then((response) => response.json() as Promise<SpineSkeleton>),
       Promise.all(PLANE_ASSETS.map((asset) => Assets.load(`${import.meta.env.BASE_URL}assets/${asset}`))),
     ]);
     this.app.stage.addChild(this.world, this.overlay);
@@ -363,61 +572,35 @@ export class GameScene {
   }
 
   private buildChicken() {
-    const addPart = (
-      name: string,
-      x: number,
-      y: number,
-      rotation = 0,
-      flipX = false,
-      idle?: Omit<ChickenIdlePart, 'sprite' | 'x' | 'y' | 'rotation'>,
-    ) => {
-      const sprite = atlasSprite(this.chickenTexture, this.chickenAtlas, name);
-      sprite.anchor.set(0.5);
-      sprite.position.set(x, y);
-      sprite.scale.x = flipX ? -1 : 1;
-      sprite.rotation = rotation;
-      this.chicken.addChild(sprite);
-      this.chickenIdleParts.push({ sprite, x, y, rotation, ...idle });
-      return sprite;
-    };
-
+    const transforms = buildSpineTransforms(this.chickenSkeleton);
+    const defaultSkin = this.chickenSkeleton.skins.find((skin) => skin.name === 'default') ?? this.chickenSkeleton.skins[0];
     this.chickenIdleParts = [];
-    addPart('LegLYellow', -42, -3, -0.04, false, { bob: 2, phase: 0.7 });
-    addPart('LegRYellow', 43, -2, 0.04, false, { bob: 2, phase: 1.1 });
 
-    addPart('ArmLYellow', -92, -54, Math.PI - 0.04, false, { bob: 3, turn: 0.04, phase: 0.3 });
-    addPart('ArmRYellow', 91, -58, -0.08, false, { bob: 3, turn: -0.04, phase: 0.9 });
+    this.chickenSkeleton.slots.forEach((slot) => {
+      if (!NORMAL_CHICKEN_SLOTS.has(slot.name)) return;
+      const slotAttachments = defaultSkin.attachments[slot.name];
+      if (!slotAttachments) return;
+      const attachmentName = slot.attachment ?? ATTACHMENT_BY_SLOT[slot.name] ?? firstAttachmentName(slotAttachments);
+      if (!attachmentName) return;
+      const attachment = slotAttachments[attachmentName];
+      if (!attachment) return;
 
-    const body = atlasSprite(this.chickenTexture, this.chickenAtlas, 'BodyYellow');
-    body.anchor.set(0.5, 0.88);
-    this.chicken.addChild(body);
-    this.chickenIdleParts.push({ sprite: body, x: 0, y: 0, rotation: 0, bob: 4, sway: 1.6 });
+      const textureName = attachment.path ?? attachmentName;
+      const part = atlasSprite(this.chickenTexture, this.chickenAtlas, textureName);
+      part.anchor.set(0.5);
+      const slotTransform = transforms.byName[slot.bone];
+      const vertexCount = (attachment.uvs?.length ?? QUAD_VERTICES.length) / 2;
+      const vertices = meshVerticesFromAttachment(attachment, slotTransform, transforms.byIndex, vertexCount);
+      const bounds = boundsFromVertices(vertices);
+      part.position.set(bounds.x, bounds.y);
 
-    const jacket = atlasSprite(this.chickenTexture, this.chickenAtlas, 'JacketYellow');
-    jacket.anchor.set(0.5, 0.5);
-    jacket.position.set(4, -33);
-    this.chicken.addChild(jacket);
-    this.chickenIdleParts.push({ sprite: jacket, x: 4, y: -33, rotation: 0, bob: 4, sway: 1.6 });
-
-    addPart('JacketTopL', -51, -76, -0.12, false, { bob: 4, sway: 1.6 });
-    addPart('JacketTopR', 51, -76, 0.12, false, { bob: 4, sway: 1.6 });
-    addPart('SunglassesYellow', 30, -153, 0.06, false, { bob: 5, sway: 2, turn: 0.018, phase: 0.2 });
-    addPart('BeakInsideYellow', 77, -123, -0.03, false, { bob: 5, sway: 2, turn: 0.02, phase: 0.2 });
-    addPart('ShoutingMouthTongueYellow', 74, -115, -0.04, false, { bob: 5, sway: 2, turn: 0.02, phase: 0.2 });
-    addPart('BeakTopYellow', 78, -134, -0.04, false, { bob: 5, sway: 2, turn: 0.02, phase: 0.2 });
-    addPart('BeakBottomYellow', 77, -113, -0.06, false, { bob: 5, sway: 2, turn: 0.02, phase: 0.2 });
-    addPart('WattleYellow', 64, -94, 0.08, false, { bob: 5, sway: 2, turn: 0.035, phase: 0.4 });
-
-    const comb = atlasSprite(this.chickenTexture, this.chickenAtlas, 'CombYellow');
-    comb.anchor.set(0.5);
-    comb.position.set(-16, -244);
-    comb.rotation = -0.08;
-    this.chicken.addChild(comb);
-    this.chickenIdleParts.push({ sprite: comb, x: -16, y: -244, rotation: -0.08, bob: 6, sway: 2.4, turn: 0.035 });
+      this.chicken.addChild(part);
+      this.chickenIdleParts.push({ sprite: part, x: bounds.x, y: bounds.y, rotation: 0, bob: 2, sway: 0.7 });
+    });
 
     this.chicken.eventMode = 'static';
     this.chicken.cursor = 'pointer';
-    this.chicken.hitArea = new Rectangle(-90, -290, 190, 290);
+    this.chicken.hitArea = new Rectangle(-110, -335, 235, 375);
     this.chicken.scale.set(CHICKEN_ASSET_SCALE);
     this.chicken.on('pointertap', () => playSound('chick'));
   }
@@ -552,6 +735,7 @@ export class GameScene {
       const sprite = atlasSprite(this.chickenTexture, this.chickenAtlas, piece);
       sprite.anchor.set(0.5);
       root.addChild(sprite);
+      root.scale.set(CHICKEN_ASSET_SCALE);
       root.position.set(this.chicken.x + (index - 3) * 12, CHICKEN_Y - 35);
       this.world.addChild(root);
       return root;

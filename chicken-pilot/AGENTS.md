@@ -79,6 +79,7 @@ what is already visible on the lane.
 
 - Never allow two planes on the same lane at the same time.
 - Decorative planes and crash planes share the same lane occupancy rules.
+- Planes must render above the chicken in the scene layer order.
 - If a decorative plane is already flying on the lane where the chicken jumps,
   that existing plane decides the outcome. Do not spawn a separate crash plane
   on that lane.

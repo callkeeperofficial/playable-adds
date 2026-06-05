@@ -540,7 +540,7 @@ export class GameScene {
     ]);
     this.app.stage.addChild(this.world, this.overlay);
     this.drawRoad();
-    this.world.addChild(this.route, this.vehicles, this.chicken);
+    this.world.addChild(this.route, this.chicken, this.vehicles);
     this.buildRoute(difficulty);
     this.buildChicken();
     Object.entries(this.chickenSkeleton.animations).forEach(([name, animation]) => {

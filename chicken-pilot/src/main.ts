@@ -1,23 +1,25 @@
 import './styles.css';
-import { Difficulty, INITIAL_POOL, multiplierFor, ROUTE_STEPS, Stake } from './config';
+import { collisionChanceFor, Difficulty, INITIAL_POOL, multiplierFor, ROUTE_STEPS, Stake } from './config';
 import { playSound, unlockAudio } from './audio';
-import { GameScene } from './scene';
-import { loadBankedTotal, saveBankedTotal } from './storage';
+import { GameScene, type PlaneCollisionPlan } from './scene';
+import { loadBankedTotal, loadRoundHistory, saveBankedTotal, saveRoundHistory } from './storage';
 import { GameUi, UiState } from './ui';
 
 type Phase = 'ready' | 'jumping' | 'active' | 'crashed' | 'finishing' | 'won';
 
 const root = document.querySelector<HTMLElement>('#app')!;
 const scene = new GameScene();
+const DEFAULT_ROUND_HISTORY = [1.5, 2.2, 0, 1.8, 0, 4, 1.8, 0, 2.2, 0, 1000, 1.8, 1.5, 1.8, 3.3, 4, 4, 2.2, 1.5, 0, 0];
 let phase: Phase = 'ready';
-let stake: Stake = 3;
+let stake: Stake = 0.3;
 let difficulty: Difficulty = 'easy';
 let stepIndex = -1;
 let roundValue = 0;
 let bankedTotal = loadBankedTotal();
 let marketingPool = INITIAL_POOL;
+let roundHistory = loadRoundHistory(DEFAULT_ROUND_HISTORY);
 let autoplay = false;
-const DISABLE_PLANE_COLLISIONS = true;
+let payoutFlash = 0;
 const AUTOPLAY_DELAY_MS = 320;
 
 const ui = new GameUi(root, {
@@ -31,7 +33,7 @@ const ui = new GameUi(root, {
   },
   onCashout: () => {
     unlockAudio();
-    cashout();
+    void cashout();
   },
   onToggleAutoplay: () => {
     unlockAudio();
@@ -61,7 +63,9 @@ function state(): UiState {
     stake,
     difficulty,
     roundValue,
-    pool: marketingPool,
+    totalBank: marketingPool,
+    roundHistory,
+    payoutFlash,
   };
 }
 
@@ -83,18 +87,29 @@ async function attemptStep() {
   phase = 'jumping';
   render();
   const next = stepIndex + 1;
-  const collision = !DISABLE_PLANE_COLLISIONS && next > 0;
-  if (collision) {
+  const randomCollision = next > 0 && Math.random() < collisionChanceFor(difficulty, next);
+  const collisionPlan: PlaneCollisionPlan = scene.resolvePlaneCollision(next, randomCollision);
+  if (collisionPlan !== 'none') {
     const lostAmount = roundValue;
-    phase = 'crashed';
-    roundValue = 0;
-    render();
-    autoplay = false;
-    await scene.crash(next, lostAmount);
-    resetRound();
+    const crashed = await scene.crash(next, lostAmount, collisionPlan);
+    if (crashed) {
+      phase = 'crashed';
+      roundValue = 0;
+      debitTotalBank(stake);
+      render();
+      autoplay = false;
+      recordRoundResult(multiplierFor(difficulty, next));
+      resetRound();
+      return;
+    }
+    await completeStep(next);
     return;
   }
   await scene.jumpTo(next, difficulty);
+  await completeStep(next);
+}
+
+async function completeStep(next: number) {
   stepIndex = next;
   roundValue = Number((stake * multiplierFor(difficulty, stepIndex)).toFixed(2));
   if (stepIndex >= ROUTE_STEPS - 1) {
@@ -102,7 +117,10 @@ async function attemptStep() {
     render();
     autoplay = false;
     const prize = Number((roundValue + stake * 5).toFixed(2));
+    payoutFlash = prize;
+    render();
     await scene.finish(prize);
+    recordRoundResult(prize / stake);
     bank(prize);
     resetRound();
     return;
@@ -117,11 +135,26 @@ function scheduleAutoplay() {
   window.setTimeout(() => void attemptStep(), AUTOPLAY_DELAY_MS);
 }
 
-function cashout() {
+async function cashout() {
   if (phase !== 'active') return;
+  phase = 'finishing';
+  payoutFlash = roundValue;
+  render();
   playSound('cashout');
+  await scene.cashout(roundValue);
+  recordRoundResult(roundValue / stake);
   bank(roundValue);
   resetRound();
+}
+
+function recordRoundResult(multiplier: number) {
+  const result = Number(multiplier.toFixed(2));
+  roundHistory = [result, ...roundHistory].slice(0, 40);
+  saveRoundHistory(roundHistory);
+}
+
+function debitTotalBank(value: number) {
+  marketingPool = Math.max(0, Number((marketingPool - value).toFixed(2)));
 }
 
 function bank(value: number) {
@@ -134,6 +167,7 @@ function resetRound() {
   phase = 'ready';
   stepIndex = -1;
   roundValue = 0;
+  payoutFlash = 0;
   scene.reset(difficulty);
   render();
 }

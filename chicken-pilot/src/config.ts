@@ -1,9 +1,9 @@
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'hardcore';
-export type Stake = 2 | 3 | 8 | 20;
+export type Stake = 0.1 | 0.2 | 0.3 | 0.4;
 
-export const STAKES: Stake[] = [2, 3, 8, 20];
+export const STAKES: Stake[] = [0.1, 0.2, 0.3, 0.4];
 export const ROUTE_STEPS = 20;
-export const INITIAL_POOL = 1_000_000;
+export const INITIAL_POOL = 100;
 export const STORAGE_KEY = 'chicken-pilot-banked-total';
 export const STEP_WIDTH = 292;
 export const ROAD_HEIGHT = 880;

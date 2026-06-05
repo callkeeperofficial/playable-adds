@@ -1,4 +1,4 @@
-import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, MeshSimple, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import { multiplierFor, ROAD_HEIGHT, ROUTE_STEPS, STEP_WIDTH, Difficulty } from './config';
 import { playSound } from './audio';
 
@@ -12,16 +12,6 @@ type Frame = {
 };
 type StepView = { root: Container; medal: Sprite; label: Text; vent: Sprite };
 type AmbientVehicle = { sprite: Container; speed: number; stepIndex: number; soundPlayed: boolean };
-type ChickenIdlePart = {
-  sprite: Container;
-  x: number;
-  y: number;
-  rotation: number;
-  bob?: number;
-  sway?: number;
-  turn?: number;
-  phase?: number;
-};
 type SpineBone = {
   name: string;
   parent?: string;
@@ -50,6 +40,28 @@ type SpineAttachment = {
   width?: number;
   height?: number;
 };
+type SpineKeyframe = {
+  time?: number;
+  value?: number;
+  x?: number;
+  y?: number;
+  color?: string;
+  name?: string | null;
+  curve?: string | number[];
+};
+type SpineBoneTimeline = {
+  rotate?: SpineKeyframe[];
+  translate?: SpineKeyframe[];
+  scale?: SpineKeyframe[];
+};
+type SpineSlotTimeline = {
+  rgba?: SpineKeyframe[];
+  attachment?: SpineKeyframe[];
+};
+type SpineAnimation = {
+  bones?: Record<string, SpineBoneTimeline>;
+  slots?: Record<string, SpineSlotTimeline>;
+};
 type SpineSkin = {
   name: string;
   attachments: Record<string, Record<string, SpineAttachment>>;
@@ -58,6 +70,7 @@ type SpineSkeleton = {
   bones: SpineBone[];
   slots: SpineSlot[];
   skins: SpineSkin[];
+  animations: Record<string, SpineAnimation>;
 };
 type SpineTransform = {
   a: number;
@@ -67,6 +80,24 @@ type SpineTransform = {
   tx: number;
   ty: number;
 };
+type ChickenSlotPart = {
+  slotName: string;
+  boneName: string;
+  attachment: SpineAttachment;
+  display: Sprite | MeshSimple;
+  isMesh: boolean;
+  isMeshSpriteFallback: boolean;
+  isTextureRotated: boolean;
+  vertexCount: number;
+  baseVisible: boolean;
+};
+type ChickenAnimationState = {
+  name: string;
+  elapsed: number;
+  duration: number;
+  loop: boolean;
+};
+export type PlaneCollisionPlan = 'none' | 'existing' | 'spawn';
 
 const LOCATION_SCALE = 0.55;
 const START_LOCATION_WIDTH = 563 * LOCATION_SCALE;
@@ -83,9 +114,8 @@ const CHICKEN_Y = 580;
 const MUTED_TINT = 0xe4e1dd;
 const CAP_LABEL_Y = 0;
 const CAP_LABEL_SIZE = 28;
-const VEHICLE_BLOCK_TOP = MANHOLE_Y - 125;
-const VEHICLE_BLOCK_BOTTOM = CHICKEN_Y + 115;
 const CHICKEN_ASSET_SCALE = 0.5;
+const AMBIENT_PLANE_SPAWN_INTERVAL_MS = 1450;
 const CHICKEN_TEXTURE_URL = `${import.meta.env.BASE_URL}assets/pilot-chicken-new.png`;
 const CHICKEN_JSON_URL = `${import.meta.env.BASE_URL}assets/pilot-chicken-new.json`;
 const NORMAL_CHICKEN_SLOTS = new Set([
@@ -105,6 +135,23 @@ const NORMAL_CHICKEN_SLOTS = new Set([
   'BeakTopYellow',
   'ShoutingMouthTongueYellow',
 ]);
+const EXTRA_ANIMATED_CHICKEN_SLOTS = new Set([
+  'Bam',
+  'Feather',
+  'Feather2',
+  'Crack',
+  'Crack Shade',
+  'EyeBaseL',
+  'EyeBaseR',
+  'EyeLStroke',
+  'EyeRStroke',
+  'PupilL',
+  'PupilR',
+  'StunnedEyeL',
+  'StunnedEyeR',
+]);
+const SPRITE_FALLBACK_CHICKEN_SLOTS = new Set(['LegLYellow', 'LegRYellow']);
+const FLIPPED_X_CHICKEN_SLOTS = new Set(['LegRYellow']);
 const ATTACHMENT_BY_SLOT: Record<string, string> = {
   BeakInsideYellow: 'BeakInsideYellow',
   ShoutingMouthTongueYellow: 'ShoutingMouthTongueYellow',
@@ -214,11 +261,11 @@ function transformPoint(transform: SpineTransform, x: number, y: number): [numbe
   ];
 }
 
-function buildSpineTransforms(skeleton: SpineSkeleton) {
+function buildSpineTransforms(bones: SpineBone[]) {
   const byName: Record<string, SpineTransform> = {};
   const byIndex: SpineTransform[] = [];
 
-  skeleton.bones.forEach((bone, index) => {
+  bones.forEach((bone, index) => {
     const scaleX = bone.name === 'root' ? 1 : (bone.scaleX ?? 1);
     const scaleY = bone.name === 'root' ? 1 : (bone.scaleY ?? 1);
     const local = localTransform(bone.x ?? 0, bone.y ?? 0, bone.rotation ?? 0, scaleX, scaleY);
@@ -228,6 +275,101 @@ function buildSpineTransforms(skeleton: SpineSkeleton) {
   });
 
   return { byName, byIndex };
+}
+
+function keyTime(key: SpineKeyframe) {
+  return key.time ?? 0;
+}
+
+function keyValue(key: SpineKeyframe, field: 'value' | 'x' | 'y', fallback: number) {
+  return key[field] ?? fallback;
+}
+
+function sampleTimeline(track: SpineKeyframe[] | undefined, time: number, defaults: { value?: number; x?: number; y?: number }) {
+  if (!track?.length) return defaults;
+  const first = track[0];
+  const firstTime = keyTime(first);
+  if (time < firstTime) return defaults;
+  let previous = first;
+  let next = track[track.length - 1];
+
+  for (let index = 1; index < track.length; index++) {
+    next = track[index];
+    if (time < keyTime(next)) break;
+    previous = next;
+  }
+
+  const previousTime = keyTime(previous);
+  const nextTime = keyTime(next);
+  const previousValue = {
+    value: keyValue(previous, 'value', defaults.value ?? 0),
+    x: keyValue(previous, 'x', defaults.x ?? 0),
+    y: keyValue(previous, 'y', defaults.y ?? 0),
+  };
+
+  if (previous === next || previous.curve === 'stepped' || nextTime <= previousTime) return previousValue;
+
+  const progress = Math.min(1, Math.max(0, (time - previousTime) / (nextTime - previousTime)));
+  const nextValue = {
+    value: keyValue(next, 'value', defaults.value ?? 0),
+    x: keyValue(next, 'x', defaults.x ?? 0),
+    y: keyValue(next, 'y', defaults.y ?? 0),
+  };
+
+  return {
+    value: previousValue.value + (nextValue.value - previousValue.value) * progress,
+    x: previousValue.x + (nextValue.x - previousValue.x) * progress,
+    y: previousValue.y + (nextValue.y - previousValue.y) * progress,
+  };
+}
+
+function sampleAttachment(track: SpineKeyframe[] | undefined, time: number) {
+  if (!track?.length || time < keyTime(track[0])) return undefined;
+  let attachmentName = track[0].name ?? null;
+  for (const key of track) {
+    if (keyTime(key) > time) break;
+    attachmentName = key.name ?? null;
+  }
+  return attachmentName;
+}
+
+function colorAlpha(color?: string) {
+  if (!color || color.length < 8) return 1;
+  return Number.parseInt(color.slice(6, 8), 16) / 255;
+}
+
+function sampleAlpha(track: SpineKeyframe[] | undefined, time: number) {
+  if (!track?.length) return undefined;
+  if (time < keyTime(track[0])) return undefined;
+  let previous = track[0];
+  let next = track[track.length - 1];
+
+  for (let index = 1; index < track.length; index++) {
+    next = track[index];
+    if (time < keyTime(next)) break;
+    previous = next;
+  }
+
+  const previousTime = keyTime(previous);
+  const nextTime = keyTime(next);
+  const previousAlpha = colorAlpha(previous.color);
+  if (previous === next || previous.curve === 'stepped' || nextTime <= previousTime) return previousAlpha;
+  const progress = Math.min(1, Math.max(0, (time - previousTime) / (nextTime - previousTime)));
+  return previousAlpha + (colorAlpha(next.color) - previousAlpha) * progress;
+}
+
+function animationDuration(animation?: SpineAnimation) {
+  const times: number[] = [];
+  const walk = (value: unknown) => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === 'object') {
+      const key = value as SpineKeyframe;
+      if (typeof key.time === 'number') times.push(key.time);
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(animation);
+  return Math.max(0, ...times);
 }
 
 function firstAttachmentName(attachments: Record<string, SpineAttachment>): string | undefined {
@@ -348,12 +490,15 @@ export class GameScene {
   private roadLaneTexture!: Texture;
   private planeTextures: Texture[] = [];
   private viewWidth = 1200;
+  private viewHeight = 700;
   private worldScale = 1;
   private currentStep = -1;
   private ambientVehicles: AmbientVehicle[] = [];
+  private reservedPlaneSteps = new Set<number>();
   private ambientSpawnElapsed = 0;
-  private idleElapsed = 0;
-  private chickenIdleParts: ChickenIdlePart[] = [];
+  private chickenSlotParts: ChickenSlotPart[] = [];
+  private chickenAnimation?: ChickenAnimationState;
+  private chickenAnimationDurations = new Map<string, number>();
 
   async mount(host: HTMLElement, difficulty: Difficulty) {
     await this.app.init({
@@ -398,11 +543,14 @@ export class GameScene {
     this.world.addChild(this.route, this.vehicles, this.chicken);
     this.buildRoute(difficulty);
     this.buildChicken();
+    Object.entries(this.chickenSkeleton.animations).forEach(([name, animation]) => {
+      this.chickenAnimationDurations.set(name, animationDuration(animation));
+    });
     this.reset();
     this.resize(host);
     this.app.ticker.add((ticker) => {
       this.updateAmbientVehicles(ticker.deltaMS);
-      this.updateChickenIdle(ticker.deltaMS);
+      this.updateChickenAnimation(ticker.deltaMS);
     });
   }
 
@@ -411,11 +559,18 @@ export class GameScene {
     this.worldScale = host.clientHeight / ROAD_HEIGHT;
     this.world.scale.set(this.worldScale);
     this.viewWidth = host.clientWidth;
+    this.viewHeight = host.clientHeight;
     this.positionCamera(this.currentStep, true);
   }
 
   hasVehicleOnStep(stepIndex: number) {
-    return this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex && !vehicle.sprite.destroyed);
+    return this.reservedPlaneSteps.has(stepIndex) || Boolean(this.findAmbientVehicleOnStep(stepIndex));
+  }
+
+  resolvePlaneCollision(stepIndex: number, randomCollision: boolean): PlaneCollisionPlan {
+    const existingVehicle = this.findAmbientVehicleOnStep(stepIndex);
+    if (existingVehicle) return this.isBeforeCollisionDecisionPoint(existingVehicle) ? 'existing' : 'none';
+    return randomCollision ? 'spawn' : 'none';
   }
 
   reset(difficulty?: Difficulty) {
@@ -432,65 +587,51 @@ export class GameScene {
     this.vehicles.removeChildren().forEach((child) => child.destroy());
     this.clearOverlay();
     this.ambientVehicles = [];
+    this.reservedPlaneSteps.clear();
     this.ambientSpawnElapsed = 0;
     this.restoreChicken();
     this.chicken.position.set(CHICKEN_START_X, CHICKEN_Y);
+    this.chicken.rotation = 0;
+    this.playChickenAnimation('Start', true);
   }
 
   async jumpTo(stepIndex: number, difficulty: Difficulty) {
-    const fromX = this.chicken.x;
-    const targetX = WORLD_START + stepIndex * STEP_WIDTH;
-    await this.waitForStepTraffic(stepIndex);
-    playSound('jump');
-    await this.animate(560, (progress) => {
-      this.chicken.x = fromX + (targetX - fromX) * ease(progress);
-      this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
-      this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
-      this.positionCamera(stepIndex, false);
-    });
-    this.chicken.y = CHICKEN_Y;
-    this.chicken.rotation = 0;
-    this.currentStep = stepIndex;
-    this.positionCamera(stepIndex, true);
-    if (stepIndex > 0) this.passStep(stepIndex - 1);
-    this.hideCurrentStep(stepIndex);
-    this.updateRouteHighlights(stepIndex + 1);
+    await this.animateChickenJumpTo(stepIndex);
+    this.playChickenAnimation('Idle Active', true);
   }
 
-  async crash(stepIndex: number, lostAmount: number) {
+  async crash(stepIndex: number, lostAmount: number, plan: PlaneCollisionPlan = 'spawn') {
     const targetX = WORLD_START + stepIndex * STEP_WIDTH;
-    const fromX = this.chicken.x;
-    await this.waitForStepTraffic(stepIndex);
-    playSound('jump');
-    await this.animate(560, (progress) => {
-      this.chicken.x = fromX + (targetX - fromX) * ease(progress);
-      this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
-      this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
-      this.positionCamera(stepIndex, false);
-    });
-    this.chicken.y = CHICKEN_Y;
-    this.chicken.rotation = 0;
-    this.currentStep = stepIndex;
-    this.positionCamera(stepIndex, true);
-    if (stepIndex > 0) this.passStep(stepIndex - 1);
-    this.hideCurrentStep(stepIndex);
-    this.updateRouteHighlights(stepIndex + 1);
+    const existingVehicle = plan === 'existing' ? this.findAmbientVehicleOnStep(stepIndex) : undefined;
+    const reserveCrashLane = plan === 'spawn';
+    let crashed = false;
+    if (reserveCrashLane) this.reservedPlaneSteps.add(stepIndex);
 
-    await this.sendVehicle(targetX, () => {
-      playSound('lose');
-      this.showLossNotification(lostAmount);
-      this.chicken.visible = false;
-      this.spawnCrashParts();
-    });
-    await this.animate(900, (progress) => {
-      this.chickenParts.forEach((part, index) => {
-        part.x += (index - 3) * 1.8;
-        part.y += -6 + progress * 12 + index * 0.35;
-        part.rotation += (index % 2 ? 1 : -1) * 0.09;
-        part.alpha = 1 - Math.max(0, progress - 0.64) * 2.7;
-      });
-    });
-    await sleep(450);
+    try {
+      await this.animateChickenJumpTo(stepIndex);
+
+      const impact = () => {
+        playSound('lose');
+        this.showLossNotification(lostAmount);
+        this.playChickenAnimation('Collision Ultimate Bloodless', false);
+      };
+
+      if (plan === 'existing') {
+        crashed = existingVehicle && !existingVehicle.sprite.destroyed
+          ? await this.waitForExistingVehicleImpact(existingVehicle, impact)
+          : false;
+      } else {
+        crashed = await this.sendVehicle(targetX, impact);
+      }
+    } finally {
+      if (reserveCrashLane) this.reservedPlaneSteps.delete(stepIndex);
+    }
+    if (!crashed) {
+      this.playChickenAnimation('Idle Active', true);
+      return false;
+    }
+    await sleep(1300);
+    return true;
   }
 
   async finish(amount: number) {
@@ -498,6 +639,7 @@ export class GameScene {
     const fromY = this.chicken.y;
     this.chicken.rotation = 0;
     this.currentStep = ROUTE_STEPS;
+    this.playChickenAnimation('Happy Jump', false);
     await this.animate(980, (progress) => {
       const eased = ease(progress);
       this.chicken.x = fromX + (FINISH_CHICKEN_X - fromX) * eased;
@@ -508,24 +650,16 @@ export class GameScene {
     this.chicken.position.set(FINISH_CHICKEN_X, FINISH_CHICKEN_Y);
     this.chicken.rotation = 0;
     this.centerCameraOn(FINISH_CHICKEN_X, true);
-    this.showWinCelebration();
-    const notification = new Container();
-    const plate = Sprite.from(`${import.meta.env.BASE_URL}assets/win-notification.png`);
-    plate.anchor.set(0.5);
-    plate.scale.set(0.82);
-    const title = label(`YOU WON $${amount.toFixed(2)}`, 42, '#ffffff');
-    title.anchor.set(0.5);
-    notification.addChild(plate, title);
-    notification.position.set((-this.world.x + this.viewWidth / 2) / this.worldScale, 320);
-    notification.alpha = 0;
-    this.world.addChild(notification);
+    this.showPayoutCelebration(amount);
     playSound('win');
-    await this.animate(380, (progress) => {
-      notification.alpha = progress;
-      notification.scale.set(0.8 + progress * 0.2);
-    });
     await sleep(1600);
-    notification.destroy({ children: true });
+    this.clearOverlay();
+  }
+
+  async cashout(amount: number) {
+    this.playChickenAnimation('Happy Jump', false);
+    this.showPayoutCelebration(amount);
+    await sleep(Math.max(1300, (this.chickenAnimationDurations.get('Happy Jump') ?? 0.9) * 1000));
     this.clearOverlay();
   }
 
@@ -572,12 +706,11 @@ export class GameScene {
   }
 
   private buildChicken() {
-    const transforms = buildSpineTransforms(this.chickenSkeleton);
     const defaultSkin = this.chickenSkeleton.skins.find((skin) => skin.name === 'default') ?? this.chickenSkeleton.skins[0];
-    this.chickenIdleParts = [];
+    this.chickenSlotParts = [];
 
     this.chickenSkeleton.slots.forEach((slot) => {
-      if (!NORMAL_CHICKEN_SLOTS.has(slot.name)) return;
+      if (!NORMAL_CHICKEN_SLOTS.has(slot.name) && !EXTRA_ANIMATED_CHICKEN_SLOTS.has(slot.name)) return;
       const slotAttachments = defaultSkin.attachments[slot.name];
       if (!slotAttachments) return;
       const attachmentName = slot.attachment ?? ATTACHMENT_BY_SLOT[slot.name] ?? firstAttachmentName(slotAttachments);
@@ -586,16 +719,34 @@ export class GameScene {
       if (!attachment) return;
 
       const textureName = attachment.path ?? attachmentName;
-      const part = atlasSprite(this.chickenTexture, this.chickenAtlas, textureName);
-      part.anchor.set(0.5);
-      const slotTransform = transforms.byName[slot.bone];
       const vertexCount = (attachment.uvs?.length ?? QUAD_VERTICES.length) / 2;
-      const vertices = meshVerticesFromAttachment(attachment, slotTransform, transforms.byIndex, vertexCount);
-      const bounds = boundsFromVertices(vertices);
-      part.position.set(bounds.x, bounds.y);
+      const texture = textureFromAtlas(this.chickenTexture, this.chickenAtlas, textureName);
+      const isTextureRotated = Boolean(this.chickenAtlas[textureName]?.rotate);
+      const useSpriteFallback = SPRITE_FALLBACK_CHICKEN_SLOTS.has(slot.name);
+      const part = attachment.type === 'mesh' && attachment.uvs?.length && attachment.triangles?.length && !useSpriteFallback
+        ? new MeshSimple({
+          texture,
+          vertices: new Float32Array(vertexCount * 2),
+          uvs: new Float32Array(attachment.uvs),
+          indices: new Uint32Array(attachment.triangles),
+        })
+        : atlasSprite(this.chickenTexture, this.chickenAtlas, textureName);
+
+      if (part instanceof Sprite) part.anchor.set(0.5);
+      part.visible = NORMAL_CHICKEN_SLOTS.has(slot.name);
 
       this.chicken.addChild(part);
-      this.chickenIdleParts.push({ sprite: part, x: bounds.x, y: bounds.y, rotation: 0, bob: 2, sway: 0.7 });
+      this.chickenSlotParts.push({
+        slotName: slot.name,
+        boneName: slot.bone,
+        attachment,
+        display: part,
+        isMesh: part instanceof MeshSimple,
+        isMeshSpriteFallback: useSpriteFallback,
+        isTextureRotated,
+        vertexCount,
+        baseVisible: NORMAL_CHICKEN_SLOTS.has(slot.name),
+      });
     });
 
     this.chicken.eventMode = 'static';
@@ -603,20 +754,103 @@ export class GameScene {
     this.chicken.hitArea = new Rectangle(-110, -335, 235, 375);
     this.chicken.scale.set(CHICKEN_ASSET_SCALE);
     this.chicken.on('pointertap', () => playSound('chick'));
+    this.applyChickenAnimation('Start', 0);
   }
 
-  private updateChickenIdle(deltaMS: number) {
+  private playChickenAnimation(name: string, loop: boolean) {
+    const duration = this.chickenAnimationDurations.get(name) ?? animationDuration(this.chickenSkeleton.animations[name]);
+    this.chickenAnimation = { name, elapsed: 0, duration, loop };
+    this.applyChickenAnimation(name, 0);
+  }
+
+  private updateChickenAnimation(deltaMS: number) {
     if (!this.chicken.visible) return;
-    this.idleElapsed += deltaMS / 1000;
-    const breath = Math.sin(this.idleElapsed * Math.PI * 1.65);
-    const sway = Math.sin(this.idleElapsed * Math.PI * 0.82);
-    this.chickenIdleParts.forEach((part) => {
-      const phase = part.phase ?? 0;
-      const localBreath = Math.sin(this.idleElapsed * Math.PI * 1.65 + phase);
-      part.sprite.x = part.x + (part.sway ?? 0) * sway;
-      part.sprite.y = part.y + (part.bob ?? 0) * localBreath;
-      part.sprite.rotation = part.rotation + (part.turn ?? 0) * breath;
+    if (!this.chickenAnimation) {
+      this.playChickenAnimation('Start', true);
+      return;
+    }
+    const animation = this.chickenAnimation;
+    animation.elapsed += deltaMS / 1000;
+    const duration = Math.max(animation.duration, 0.001);
+    const time = animation.loop ? animation.elapsed % duration : Math.min(animation.elapsed, duration);
+    this.applyChickenAnimation(animation.name, time);
+  }
+
+  private applyChickenAnimation(name: string, time: number) {
+    const animation = this.chickenSkeleton.animations[name];
+    if (!animation) return;
+    const posedBones = this.chickenSkeleton.bones.map((bone) => ({ ...bone }));
+    const posedByName = Object.fromEntries(posedBones.map((bone) => [bone.name, bone]));
+
+    Object.entries(animation.bones ?? {}).forEach(([boneName, timeline]) => {
+      const setupBone = this.chickenSkeleton.bones.find((bone) => bone.name === boneName);
+      const bone = posedByName[boneName];
+      if (!setupBone || !bone) return;
+      const rotate = sampleTimeline(timeline.rotate, time, { value: 0 }).value ?? 0;
+      const translate = sampleTimeline(timeline.translate, time, { x: 0, y: 0 });
+      const scale = sampleTimeline(timeline.scale, time, { x: 1, y: 1 });
+      bone.rotation = (setupBone.rotation ?? 0) + rotate;
+      bone.x = (setupBone.x ?? 0) + (translate.x ?? 0);
+      bone.y = (setupBone.y ?? 0) + (translate.y ?? 0);
+      bone.scaleX = (setupBone.scaleX ?? 1) * (scale.x ?? 1);
+      bone.scaleY = (setupBone.scaleY ?? 1) * (scale.y ?? 1);
     });
+
+    const transforms = buildSpineTransforms(posedBones);
+
+    this.chickenSlotParts.forEach((part) => {
+      const slotAnimation = animation.slots?.[part.slotName];
+      const attachmentName = sampleAttachment(slotAnimation?.attachment, time);
+      const alpha = sampleAlpha(slotAnimation?.rgba, time) ?? 1;
+      const visible = attachmentName === undefined ? part.baseVisible : attachmentName !== null;
+      this.applyChickenPartPose(part, transforms, visible, alpha);
+    });
+  }
+
+  private applyChickenPartPose(
+    part: ChickenSlotPart,
+    transforms: ReturnType<typeof buildSpineTransforms>,
+    visible: boolean,
+    alpha: number,
+  ) {
+    const slotTransform = transforms.byName[part.boneName];
+    if (!slotTransform) return;
+    const display = part.display;
+    display.visible = visible && alpha > 0.01;
+    display.alpha = alpha;
+
+    if (part.isMesh) {
+      (display as MeshSimple).vertices = meshVerticesFromAttachment(part.attachment, slotTransform, transforms.byIndex, part.vertexCount);
+      display.position.set(0, 0);
+      display.rotation = 0;
+      display.scale.set(1);
+      return;
+    }
+
+    if (part.isMeshSpriteFallback) {
+      const vertices = meshVerticesFromAttachment(part.attachment, slotTransform, transforms.byIndex, part.vertexCount);
+      const bounds = boundsFromVertices(vertices);
+      const flipX = FLIPPED_X_CHICKEN_SLOTS.has(part.slotName);
+      display.position.set(bounds.x, bounds.y);
+      display.rotation = 0;
+      display.scale.set(flipX && !part.isTextureRotated ? -1 : 1, flipX && part.isTextureRotated ? -1 : 1);
+      return;
+    }
+
+    const local = localTransform(
+      part.attachment.x ?? 0,
+      part.attachment.y ?? 0,
+      part.attachment.rotation ?? 0,
+      part.attachment.scaleX ?? 1,
+      part.attachment.scaleY ?? 1,
+    );
+    const transform = composeTransform(slotTransform, local);
+    const scaleX = Math.hypot(transform.a, transform.c);
+    const scaleY = Math.hypot(transform.b, transform.d) * (transform.a * transform.d - transform.b * transform.c < 0 ? -1 : 1);
+
+    display.position.set(transform.tx, -transform.ty);
+    display.rotation = Math.atan2(-transform.c, transform.a);
+    display.scale.set(scaleX, scaleY);
   }
 
   private passStep(index: number) {
@@ -641,6 +875,48 @@ export class GameScene {
     });
   }
 
+  private async animateChickenJumpTo(stepIndex: number) {
+    const fromX = this.chicken.x;
+    const targetX = WORLD_START + stepIndex * STEP_WIDTH;
+    const reserveLaneForJump = !this.hasVehicleOnStep(stepIndex);
+    if (reserveLaneForJump) this.reservedPlaneSteps.add(stepIndex);
+    this.playChickenAnimation('Walk', true);
+    playSound('jump');
+    try {
+      await this.animate(560, (progress) => {
+        this.chicken.x = fromX + (targetX - fromX) * ease(progress);
+        this.chicken.y = CHICKEN_Y - Math.sin(progress * Math.PI) * 150;
+        this.chicken.rotation = Math.sin(progress * Math.PI * 2) * 0.08;
+        this.positionCamera(stepIndex, false);
+      });
+      this.chicken.y = CHICKEN_Y;
+      this.chicken.rotation = 0;
+      this.currentStep = stepIndex;
+      this.positionCamera(stepIndex, true);
+      if (stepIndex > 0) this.passStep(stepIndex - 1);
+      this.hideCurrentStep(stepIndex);
+      this.updateRouteHighlights(stepIndex + 1);
+    } finally {
+      if (reserveLaneForJump) this.reservedPlaneSteps.delete(stepIndex);
+    }
+  }
+
+  private findAmbientVehicleOnStep(stepIndex: number) {
+    return this.ambientVehicles.find((vehicle) => vehicle.stepIndex === stepIndex && !vehicle.sprite.destroyed);
+  }
+
+  private collisionDecisionY() {
+    return MANHOLE_Y + this.capNormalTexture.height / 2;
+  }
+
+  private planeFrontY(vehicle: Container) {
+    return vehicle.y + vehicle.height / 2;
+  }
+
+  private isBeforeCollisionDecisionPoint(vehicle: AmbientVehicle) {
+    return this.planeFrontY(vehicle.sprite) <= this.collisionDecisionY();
+  }
+
   private createPlaneSprite(index?: number) {
     const texture = this.planeTextures[index ?? Math.floor(Math.random() * this.planeTextures.length)];
     const plane = new Sprite(texture);
@@ -654,20 +930,51 @@ export class GameScene {
     this.vehicles.addChild(plane);
     playSound('plane');
     let impacted = false;
-    await this.animate(720, (progress) => {
-      plane.y = -260 + progress * 1100;
-      if (!impacted && plane.y >= CHICKEN_Y) {
+    try {
+      await this.animate(720, (progress) => {
+        plane.y = -260 + progress * 1100;
+        if (!impacted && this.planeFrontY(plane) >= CHICKEN_Y) {
+          impacted = true;
+          onImpact?.();
+        }
+      });
+      if (!impacted) {
         impacted = true;
         onImpact?.();
       }
+    } finally {
+      plane.destroy();
+    }
+    return impacted;
+  }
+
+  private waitForExistingVehicleImpact(vehicle: AmbientVehicle, onImpact: () => void) {
+    return new Promise<boolean>((resolve) => {
+      let impacted = false;
+      const tick = () => {
+        if (vehicle.sprite.destroyed) {
+          resolve(false);
+          return;
+        }
+        if (!this.isBeforeCollisionDecisionPoint(vehicle)) {
+          resolve(false);
+          return;
+        }
+        if (!impacted && this.planeFrontY(vehicle.sprite) >= CHICKEN_Y) {
+          impacted = true;
+          onImpact();
+          resolve(true);
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
     });
-    if (!impacted) onImpact?.();
-    plane.destroy();
   }
 
   private updateAmbientVehicles(deltaMS: number) {
     this.ambientSpawnElapsed += deltaMS;
-    if (this.ambientSpawnElapsed >= 1900) {
+    if (this.ambientSpawnElapsed >= AMBIENT_PLANE_SPAWN_INTERVAL_MS) {
       this.ambientSpawnElapsed = 0;
       this.spawnAmbientVehicle();
     }
@@ -695,7 +1002,7 @@ export class GameScene {
     const availableSteps = Array.from(
       { length: lastVisibleStep - firstVisibleStep + 1 },
       (_, index) => firstVisibleStep + index,
-    ).filter((stepIndex) => !this.ambientVehicles.some((vehicle) => vehicle.stepIndex === stepIndex));
+    ).filter((stepIndex) => !this.hasVehicleOnStep(stepIndex));
     if (!availableSteps.length) return;
     const stepIndex = availableSteps[Math.floor(Math.random() * availableSteps.length)];
     const sprite = this.createPlaneSprite();
@@ -707,25 +1014,6 @@ export class GameScene {
       stepIndex,
       soundPlayed: this.currentStep < 0,
     });
-  }
-
-  private waitForStepTraffic(stepIndex: number) {
-    return new Promise<void>((resolve) => {
-      const tick = () => {
-        if (!this.hasBlockingTraffic(stepIndex)) resolve();
-        else requestAnimationFrame(tick);
-      };
-      tick();
-    });
-  }
-
-  private hasBlockingTraffic(stepIndex: number) {
-    return this.ambientVehicles.some((vehicle) => (
-      vehicle.stepIndex === stepIndex
-      && !vehicle.sprite.destroyed
-      && vehicle.sprite.y >= VEHICLE_BLOCK_TOP
-      && vehicle.sprite.y <= VEHICLE_BLOCK_BOTTOM
-    ));
   }
 
   private spawnCrashParts() {
@@ -809,35 +1097,76 @@ export class GameScene {
     });
   }
 
-  private showWinCelebration() {
+  private showPayoutCelebration(amount: number) {
     this.clearOverlay();
     const root = new Container();
+    const bandHeight = Math.min(190, Math.max(124, this.viewHeight * 0.2));
+    const centerX = this.viewWidth / 2;
+    const centerY = Math.max(54, bandHeight * 0.42);
+    const titleSize = Math.round(Math.min(26, Math.max(18, this.viewWidth * 0.013)));
+    const amountSize = Math.round(Math.min(34, Math.max(24, this.viewWidth * 0.017)));
 
-    const confetti = new Sprite(this.confettiTexture);
-    confetti.anchor.set(0.5, 0);
-    confetti.width = Math.min(this.viewWidth * 0.82, 700);
-    confetti.height = confetti.width * (this.confettiTexture.height / this.confettiTexture.width);
-    confetti.position.set(this.viewWidth / 2, 18);
+    const glow = new Graphics();
+    for (let index = 0; index < 14; index += 1) {
+      const progress = index / 13;
+      const alpha = 0.25 * (1 - progress) ** 1.35;
+      glow
+        .rect(0, progress * bandHeight, this.viewWidth, bandHeight / 13 + 1)
+        .fill({ color: 0x6cdc2d, alpha });
+    }
+    glow
+      .ellipse(centerX, centerY - 8, Math.min(620, this.viewWidth * 0.4), bandHeight * 0.42)
+      .fill({ color: 0x86f03a, alpha: 0.14 });
+
+    const title = new Text({
+      text: 'Win',
+      style: new TextStyle({
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: titleSize,
+        fontWeight: '900',
+        fill: '#ffffff',
+        stroke: { color: '#295023', width: 2 },
+      }),
+    });
+    title.anchor.set(0.5);
+    title.position.set(centerX, centerY - amountSize * 0.48);
+
+    const value = new Text({
+      text: `${amount.toFixed(2)} USD`,
+      style: new TextStyle({
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: amountSize,
+        fontWeight: '900',
+        fill: '#ffffff',
+        stroke: { color: '#295023', width: 3 },
+      }),
+    });
+    value.anchor.set(0.5);
+    value.position.set(centerX, centerY + amountSize * 0.36);
+
+    const trumpetDistance = Math.min(600, this.viewWidth * 0.32);
+    const trumpetScale = Math.min(0.7, Math.max(0.42, this.viewWidth / 2600));
 
     const leftTrumpet = new Sprite(this.trumpetTexture);
     leftTrumpet.anchor.set(0.5);
-    leftTrumpet.scale.set(0.78);
-    leftTrumpet.position.set(Math.max(100, this.viewWidth * 0.18), 96);
+    leftTrumpet.scale.set(trumpetScale);
+    leftTrumpet.position.set(Math.max(70, centerX - trumpetDistance), centerY);
+    leftTrumpet.rotation = -0.13;
 
     const rightTrumpet = new Sprite(this.trumpetTexture);
     rightTrumpet.anchor.set(0.5);
-    rightTrumpet.scale.set(-0.78, 0.78);
-    rightTrumpet.position.set(Math.min(this.viewWidth - 100, this.viewWidth * 0.82), 96);
+    rightTrumpet.scale.set(-trumpetScale, trumpetScale);
+    rightTrumpet.position.set(Math.min(this.viewWidth - 70, centerX + trumpetDistance), centerY);
+    rightTrumpet.rotation = 0.13;
 
-    root.addChild(confetti, leftTrumpet, rightTrumpet);
+    root.addChild(glow, leftTrumpet, rightTrumpet, title, value);
     root.alpha = 0;
-    root.scale.set(0.92);
+    root.y = -12;
     this.overlay.addChild(root);
 
     void this.animate(420, (progress) => {
       root.alpha = progress;
-      root.scale.set(0.92 + progress * 0.08);
-      confetti.y = 18 + Math.sin(progress * Math.PI) * 14;
+      root.y = -12 + progress * 12;
       leftTrumpet.rotation = -0.12 + Math.sin(progress * Math.PI * 2) * 0.04;
       rightTrumpet.rotation = 0.12 - Math.sin(progress * Math.PI * 2) * 0.04;
     });

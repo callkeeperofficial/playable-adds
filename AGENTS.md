@@ -41,6 +41,10 @@ workflow may be updated when they are needed to register or publish a playable.
 - Read the local `<game>/AGENTS.md` before implementing or changing a game.
 - Run the production build for the affected playable before considering work
   complete.
+- For any visual, layout, canvas, interaction, or gameplay change, verify the
+  affected playable at both desktop and mobile viewport sizes before considering
+  work complete. Mobile verification must include a narrow phone-sized viewport,
+  not only desktop browser resizing.
 
 ## Local Development
 
@@ -61,9 +65,10 @@ cd chicken-crash
 npm run dev -- --host 0.0.0.0 --port 5174
 ```
 
-Use the local Vite server for iterative visual verification. For responsive
-playables, verify representative desktop and mobile widths, including both
-sides of any specified breakpoint.
+Use the local Vite server for iterative visual verification. Verify
+representative desktop and mobile widths, including both sides of any specified
+breakpoint. Do this even when the change looks desktop-only, because shared
+canvas, header, and controls changes often affect mobile layout.
 
 ## GitHub Pages Publishing
 

@@ -3,6 +3,10 @@
 This file is the working specification for the `chicken-pilot` playable game.
 Read it before implementing or changing this game.
 
+Gameplay, UI block composition, and rule details are tracked in
+`MECHANICS.md`. Update that file whenever a change alters how this game plays,
+which interface blocks are present, or how round state is recorded.
+
 ## Project Goal
 
 Build a browser playable using the same structure and interaction model as
@@ -67,3 +71,22 @@ Keep source assets in `assets/source/` and runtime assets in `public/assets/`.
 When plane-themed assets arrive, replace or add them inside this project only.
 Do not borrow from another playable at runtime unless it is intentionally copied
 into `chicken-pilot`.
+
+## Plane Traffic And Collision Rules
+
+Plane behavior is part of the core game logic and must stay deterministic from
+what is already visible on the lane.
+
+- Never allow two planes on the same lane at the same time.
+- Decorative planes and crash planes share the same lane occupancy rules.
+- If a decorative plane is already flying on the lane where the chicken jumps,
+  that existing plane decides the outcome. Do not spawn a separate crash plane
+  on that lane.
+- The lane has a collision decision point at the end of the manhole cap. If,
+  during the chicken jump, the existing plane is before that point, it hits the
+  chicken regardless of random chance or other factors.
+- Use the plane's front/leading edge for this decision, not the sprite center.
+- If the existing plane has already passed the end of the manhole cap, it keeps
+  flying away and does not hit the chicken.
+- Only spawn a new crash plane when there is no existing plane on the target
+  lane and the normal collision calculation says the chicken should be hit.

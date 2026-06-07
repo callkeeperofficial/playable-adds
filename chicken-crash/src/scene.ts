@@ -31,9 +31,10 @@ const MUTED_TINT = 0xe4e1dd;
 const BARRIER_STOP_Y = 118;
 const MANHOLE_SCALE = 0.42;
 const HATCH_FLIP_MS = 260;
-const FINISH_WALK_SPEED_PX_PER_SECOND = 115;
-const FINISH_WALK_MIN_MS = 4200;
-const FINISH_WALK_MAX_MS = 6200;
+const FINAL_STOP_SCREEN_TRAVEL = 0.34;
+const FINAL_STOP_SPEED_PX_PER_SECOND = 115;
+const FINAL_STOP_MIN_MS = 1800;
+const FINAL_STOP_MAX_MS = 2600;
 const MULTIPLIER_BADGE_Y = CHICKEN_Y + 165;
 const USE_VIDEO_CHICKEN = new URLSearchParams(window.location.search).has('videoChicken');
 const frames = {
@@ -100,6 +101,7 @@ export class GameScene {
   private activeVehicleSteps = new Set<number>();
   private pendingCrashVehicle?: AmbientVehicle;
   private ambientSpawnElapsed = 0;
+  private ambientPaused = false;
 
   async mount(host: HTMLElement, difficulty: Difficulty) {
     await this.app.init({ width: host.clientWidth, height: host.clientHeight, background: '#777370', antialias: true });
@@ -147,7 +149,13 @@ export class GameScene {
     this.world.scale.set(this.worldScale);
     this.viewWidth = host.clientWidth;
     this.viewHeight = host.clientHeight;
+    if (this.ambientPaused) return;
     this.positionCamera(this.currentStep, true);
+  }
+
+  setPaused(paused: boolean) {
+    if (paused) this.app.ticker.stop();
+    else this.app.ticker.start();
   }
 
   hasVehicleOnStep(stepIndex: number) {
@@ -183,6 +191,7 @@ export class GameScene {
   }
 
   reset(difficulty?: Difficulty) {
+    this.ambientPaused = false;
     this.currentStep = -1;
     this.world.x = 0;
     this.steps.forEach((step, index) => {
@@ -315,13 +324,14 @@ export class GameScene {
     return true;
   }
 
-  async finish(amount: number) {
+  async finish() {
     const fromX = this.chicken.x;
-    const finishX = fromX + this.viewWidth / this.worldScale + 360;
+    const finishX = fromX + (this.viewWidth / this.worldScale) * FINAL_STOP_SCREEN_TRAVEL;
+    const lockedChickenScreenX = this.chicken.x * this.worldScale + this.world.x;
     const finishDistancePx = (finishX - fromX) * this.worldScale;
     const finishDuration = Math.min(
-      FINISH_WALK_MAX_MS,
-      Math.max(FINISH_WALK_MIN_MS, (finishDistancePx / FINISH_WALK_SPEED_PX_PER_SECOND) * 1000),
+      FINAL_STOP_MAX_MS,
+      Math.max(FINAL_STOP_MIN_MS, (finishDistancePx / FINAL_STOP_SPEED_PX_PER_SECOND) * 1000),
     );
     this.setSpineAnimation('win', true);
     this.multiplierBadge.visible = false;
@@ -331,8 +341,10 @@ export class GameScene {
       this.chicken.x = fromX + (finishX - fromX) * progress;
       this.chicken.y = CHICKEN_Y;
       this.syncMultiplierBadge();
+      this.positionCameraAtWorldX(this.chicken.x, true, lockedChickenScreenX);
     });
-    await this.showWinNotification(amount, true);
+    this.ambientPaused = true;
+    playSound('win');
   }
 
   async showWinNotification(amount: number, playWinSound = false) {
@@ -584,8 +596,9 @@ export class GameScene {
   }
 
   private updateAmbientVehicles(deltaMS: number) {
+    if (this.ambientPaused) return;
     this.ambientSpawnElapsed += deltaMS;
-    if (this.ambientSpawnElapsed >= 1900) {
+    if (this.ambientSpawnElapsed >= 2600) {
       this.ambientSpawnElapsed = 0;
       this.spawnAmbientVehicle();
     }
@@ -749,6 +762,14 @@ export class GameScene {
     const target = Math.min(0, leftMargin - previousStepX * this.worldScale);
     if (immediate) this.world.x = target;
     else this.world.x += (target - this.world.x) * 0.2;
+  }
+
+  private positionCameraAtWorldX(worldX: number, immediate = false, focusX = this.viewWidth * 0.58) {
+    const worldRight = WORLD_START + ROUTE_STEPS * STEP_WIDTH + 1160;
+    const minWorldX = Math.min(0, this.viewWidth - worldRight * this.worldScale);
+    const target = Math.max(minWorldX, Math.min(0, focusX - worldX * this.worldScale));
+    if (immediate) this.world.x = target;
+    else this.world.x += (target - this.world.x) * 0.22;
   }
 
   private animate(duration: number, update: (progress: number) => void) {

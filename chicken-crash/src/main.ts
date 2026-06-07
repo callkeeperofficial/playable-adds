@@ -6,9 +6,26 @@ import { loadBankedTotal, saveBankedTotal } from './storage';
 import { GameUi, UiState } from './ui';
 
 type Phase = 'ready' | 'jumping' | 'active' | 'crashed' | 'finishing' | 'won';
+type ButtonObserver = (event: MouseEvent) => void;
+type Unsubscribe = () => void;
 
-const root = document.querySelector<HTMLElement>('#app')!;
+type ChickenCrashPublicApi = {
+  observeInstallButton: (callback: ButtonObserver) => Unsubscribe;
+  observePlayMarketButton: (callback: ButtonObserver) => Unsubscribe;
+  showGame: () => void;
+  hideGame: () => void;
+};
+
+declare global {
+  interface Window {
+    ChickenCrash: ChickenCrashPublicApi;
+  }
+}
+
+const root = document.querySelector<HTMLElement>('#chicken-crash-playable')!;
 const scene = new GameScene();
+const installObservers = new Set<ButtonObserver>();
+const playMarketObservers = new Set<ButtonObserver>();
 let phase: Phase = 'ready';
 let stake: Stake = 3;
 let difficulty: Difficulty = 'easy';
@@ -20,12 +37,15 @@ let autoplay = false;
 let online = 16_500 + Math.floor(Math.random() * 230);
 let liveWin: UiState['liveWin'];
 let goBlocked = false;
+let gameVisible = true;
 const AUTOPLAY_DELAY_MS = 180;
 
 const ui = new GameUi(root, {
   onPlay: () => void start(),
   onGo: () => void attemptStep(),
   onCashout: () => void cashout(),
+  onInstallClick: (event) => notifyObservers(installObservers, event),
+  onPlayMarketClick: (event) => notifyObservers(playMarketObservers, event),
   onToggleAutoplay: () => {
     autoplay = !autoplay;
     render();
@@ -56,16 +76,18 @@ function state(): UiState {
     pool: marketingPool,
     goBlocked,
     online,
+    finalWin: phase === 'won',
     liveWin,
   };
 }
 
 function render() {
   ui.render(state());
-  if (document.querySelector('canvas')) scene.resize(ui.getCanvasHost());
+  if (gameVisible && root.querySelector('canvas')) scene.resize(ui.getCanvasHost());
 }
 
 function syncGoBlocked() {
+  if (!gameVisible) return;
   const next = stepIndex + 1;
   const blocked = (phase === 'ready' || phase === 'active')
     && next >= 0
@@ -77,7 +99,7 @@ function syncGoBlocked() {
 }
 
 async function start() {
-  if (phase !== 'ready') return;
+  if (!gameVisible || phase !== 'ready') return;
   stepIndex = -1;
   roundValue = 0;
   goBlocked = false;
@@ -86,7 +108,7 @@ async function start() {
 }
 
 async function attemptStep() {
-  if (phase !== 'ready' && phase !== 'active') return;
+  if (!gameVisible || (phase !== 'ready' && phase !== 'active')) return;
   const next = stepIndex + 1;
   if (scene.isStepBlockedForJump(next)) {
     goBlocked = true;
@@ -110,10 +132,12 @@ async function attemptStep() {
     render();
     autoplay = false;
     await scene.crash(next);
+    if (!gameVisible) return;
     resetRound();
     return;
   }
   await scene.jumpTo(next, difficulty, { placeBarrier: !existingVehicleWillHit });
+  if (!gameVisible) return;
   stepIndex = next;
   if (existingVehicleWillHit || scene.hasVehicleThreatOnStep(next)) {
     phase = 'crashed';
@@ -122,6 +146,7 @@ async function attemptStep() {
     render();
     autoplay = false;
     const crashed = await scene.crashWithExistingVehicle(next);
+    if (!gameVisible) return;
     if (crashed) {
       resetRound();
       return;
@@ -134,9 +159,11 @@ async function attemptStep() {
     render();
     autoplay = false;
     const prize = Number((roundValue + stake * 5).toFixed(2));
-    await scene.finish(prize);
     bank(prize);
-    resetRound();
+    await scene.finish();
+    if (!gameVisible) return;
+    phase = 'won';
+    render();
     return;
   }
   phase = 'active';
@@ -146,12 +173,12 @@ async function attemptStep() {
 }
 
 function scheduleAutoplay() {
-  if (!autoplay || phase !== 'active') return;
+  if (!gameVisible || !autoplay || phase !== 'active') return;
   window.setTimeout(() => void attemptStep(), AUTOPLAY_DELAY_MS);
 }
 
 async function cashout() {
-  if (phase !== 'active') return;
+  if (!gameVisible || phase !== 'active') return;
   const prize = roundValue;
   phase = 'finishing';
   autoplay = false;
@@ -159,6 +186,7 @@ async function cashout() {
   render();
   playSound('cashout');
   await scene.showWinNotification(prize);
+  if (!gameVisible) return;
   bank(prize);
   resetRound();
 }
@@ -179,20 +207,68 @@ function resetRound() {
 }
 
 function showLiveWin() {
+  if (!gameVisible || phase === 'won') return;
   const [name, amount] = LIVE_WINS[Math.floor(Math.random() * LIVE_WINS.length)];
   liveWin = { name, amount };
   marketingPool = Math.max(0, marketingPool - amount);
   online += Math.floor(Math.random() * 17) - 8;
   ui.updateDecorations(state());
   window.setTimeout(() => {
+    if (!gameVisible) return;
     liveWin = undefined;
     ui.updateDecorations(state());
   }, 2300);
 }
 
+function subscribe(observers: Set<ButtonObserver>, callback: ButtonObserver) {
+  observers.add(callback);
+  return () => {
+    observers.delete(callback);
+  };
+}
+
+function notifyObservers(observers: Set<ButtonObserver>, event: MouseEvent) {
+  Array.from(observers).forEach((observer) => {
+    try {
+      observer(event);
+    } catch (error) {
+      window.setTimeout(() => { throw error; });
+    }
+  });
+}
+
+function showGame() {
+  root.hidden = false;
+  gameVisible = true;
+  scene.setPaused(false);
+  resetRound();
+}
+
+function hideGame() {
+  gameVisible = false;
+  autoplay = false;
+  liveWin = undefined;
+  phase = 'ready';
+  stepIndex = -1;
+  roundValue = 0;
+  goBlocked = false;
+  scene.reset(difficulty);
+  render();
+  scene.setPaused(true);
+  root.hidden = true;
+}
+
 render();
 await scene.mount(ui.getCanvasHost(), difficulty);
-window.addEventListener('resize', () => scene.resize(ui.getCanvasHost()));
+window.ChickenCrash = {
+  observeInstallButton: (callback) => subscribe(installObservers, callback),
+  observePlayMarketButton: (callback) => subscribe(playMarketObservers, callback),
+  showGame,
+  hideGame,
+};
+window.addEventListener('resize', () => {
+  if (gameVisible) scene.resize(ui.getCanvasHost());
+});
 window.setInterval(syncGoBlocked, 100);
 window.setInterval(showLiveWin, 4200);
 window.setTimeout(showLiveWin, 900);

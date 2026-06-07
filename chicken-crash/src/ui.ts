@@ -10,6 +10,7 @@ export type UiState = {
   pool: number;
   goBlocked: boolean;
   online: number;
+  finalWin: boolean;
   liveWin?: { name: string; amount: number };
 };
 
@@ -17,6 +18,8 @@ export type UiHandlers = {
   onPlay: () => void;
   onGo: () => void;
   onCashout: () => void;
+  onInstallClick: (event: MouseEvent) => void;
+  onPlayMarketClick: (event: MouseEvent) => void;
   onToggleAutoplay: () => void;
   onStake: (stake: Stake) => void;
   onDifficulty: (difficulty: Difficulty) => void;
@@ -56,6 +59,21 @@ export class GameUi {
         </div>
       </section>
       <main id="canvas-host"></main>
+      ${state.finalWin ? `
+        <section
+          class="final-win-overlay"
+          aria-label="Win install prompt"
+          style="--win-bg: url('${import.meta.env.BASE_URL}assets/win-notification.png'); --win-bg-mobile: url('${import.meta.env.BASE_URL}assets/win-notification-mobile.png')"
+        >
+          <div class="final-win-card">
+            <h1>YOU WON</h1>
+            <div class="final-win-actions">
+              <button type="button" class="final-win-install">Install</button>
+              <button type="button" class="final-win-market">Download from play market</button>
+            </div>
+          </div>
+        </section>
+      ` : ''}
       <section class="controls-shell">
         <div class="controls ${state.active ? 'round-active' : 'round-ready'}">
           <div class="stakes">
@@ -111,6 +129,12 @@ export class GameUi {
     this.root.querySelector('.play')?.addEventListener('click', this.handlers.onPlay);
     this.root.querySelector('.go')?.addEventListener('click', this.handlers.onGo);
     this.root.querySelector('.cashout')?.addEventListener('click', this.handlers.onCashout);
+    this.root.querySelector('.final-win-install')?.addEventListener('click', (event) => {
+      this.handlers.onInstallClick(event as MouseEvent);
+    });
+    this.root.querySelector('.final-win-market')?.addEventListener('click', (event) => {
+      this.handlers.onPlayMarketClick(event as MouseEvent);
+    });
     this.root.querySelector('.autoplay')?.addEventListener('click', this.handlers.onToggleAutoplay);
     this.root.querySelectorAll<HTMLButtonElement>('[data-stake]').forEach((button) => {
       button.addEventListener('click', () => this.handlers.onStake(Number(button.dataset.stake) as Stake));

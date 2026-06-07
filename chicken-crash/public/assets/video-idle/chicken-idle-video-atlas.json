@@ -1,7 +1,5 @@
 {
   "image": "chicken-idle-video-atlas.png",
-  "video": "chicken-idle-video-crop.webm",
-  "preview": "chicken-idle-video-preview.webp",
   "frameWidth": 480,
   "frameHeight": 430,
   "columns": 6,

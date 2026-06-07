@@ -53,6 +53,9 @@ roundValue = stake * multiplierFor(difficulty, stepIndex)
 
 - Multipliers and collision chances are generated from `src/config.ts`.
 - Higher difficulties have larger multiplier growth and higher collision risk.
+- The default `easy` curve is tuned so a full route win is plausible around
+  every couple of attempts, while higher difficulties remain progressively
+  riskier.
 
 ## Phase Behavior
 
@@ -114,9 +117,13 @@ When pressed:
 When the chicken reaches the last route step:
 
 - Autoplay switches off.
-- The chicken performs a slow, readable linear finish movement off the road.
-  On mobile it must not disappear immediately after the last step.
-- Show the win notification.
+- The chicken performs a short, readable final celebration movement and then
+  stops before the final win notification appears.
+  The camera locks to the chicken's current screen position through this
+  movement so it remains visible without a final jump.
+- Show the final win notification as a DOM overlay without a dollar amount.
+- Show two vertically stacked CTA buttons: `Install` and
+  `Download from play market`.
 - Play `win.webm`.
 - Award:
 
@@ -127,7 +134,8 @@ prize = roundValue + stake * 5
 - Add `prize` to `bankedTotal`.
 - Subtract `prize` from `marketingPool`.
 - Persist `bankedTotal`.
-- Reset the round.
+- Stop on the final win notification. The round must not reset and the user
+  must remain on this end screen.
 
 ## Current Multiplier Badge
 
@@ -166,6 +174,7 @@ Cars are road hazards and decorative traffic.
 - Cars never travel upward.
 - More than one car may exist on the screen if they are in different lanes.
 - A single lane should not spawn duplicate active cars at the same time.
+- Ambient traffic is paced to leave readable gaps between hazards.
 - Cars are rendered above the chicken so an impact reads as the chicken being
   under the car.
 - Car movement sound plays when a relevant car movement is presented.
@@ -262,6 +271,24 @@ Reset on reload:
 - Live-win state.
 - Online count.
 
+## Public API
+
+The playable exposes a small browser API at `window.ChickenCrash`:
+
+- `observeInstallButton(callback)`: register a callback for the final
+  `Install` button. Returns an unsubscribe function.
+- `observePlayMarketButton(callback)`: register a callback for the final
+  `Download from play market` button. Returns an unsubscribe function.
+- `showGame()`: show the playable, reset it to the starting state, and resume
+  the scene ticker.
+- `hideGame()`: stop autoplay, reset the playable, pause the scene ticker, and
+  hide the root game element.
+
+Full integration notes live in `PUBLIC_API.md`.
+
+The root element is `#chicken-crash-playable`. The playable must not style or
+mutate the host page `body`; page-level behavior stays scoped to the root.
+
 ## Audio Triggers
 
 - `jump.webm`: chicken starts a jump.
@@ -276,11 +303,12 @@ route or change payout.
 
 ## Win Notification
 
-The same win notification behavior is used for:
+Cash Out and final route completion use different notification behavior:
 
-- Cash Out.
-- Final route completion.
+- Cash Out shows the PixiJS win notification with the awarded amount, then
+  clears before the next round starts.
+- Final route completion shows a persistent DOM overlay without a dollar
+  amount. It contains the `Install` and `Download from play market` CTA buttons
+  and does not reset the round.
 
 Use desktop and mobile notification assets as appropriate for the viewport.
-The notification displays the awarded amount and then clears before the next
-round starts.

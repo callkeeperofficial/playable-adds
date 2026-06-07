@@ -107,16 +107,6 @@ Audio files are loaded lazily when their sounds are first played.
 | `assets/audio/lose.webm` | `https://callkeeperofficial.github.io/playable-adds/chicken-crash/assets/audio/lose.webm` |
 | `assets/audio/win.webm` | `https://callkeeperofficial.github.io/playable-adds/chicken-crash/assets/audio/win.webm` |
 
-### Optional `videoChicken` Assets
-
-These files are loaded only when the playable is opened with the
-`?videoChicken` query parameter.
-
-| File | Public URL |
-| --- | --- |
-| `assets/video-idle/chicken-idle-video-atlas.png` | `https://callkeeperofficial.github.io/playable-adds/chicken-crash/assets/video-idle/chicken-idle-video-atlas.png` |
-| `assets/video-idle/chicken-idle-video-atlas.json` | `https://callkeeperofficial.github.io/playable-adds/chicken-crash/assets/video-idle/chicken-idle-video-atlas.json` |
-
 ## Example Integration
 
 ```js

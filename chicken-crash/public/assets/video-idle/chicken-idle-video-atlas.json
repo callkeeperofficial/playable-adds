@@ -1,9 +1,0 @@
-{
-  "image": "chicken-idle-video-atlas.png",
-  "frameWidth": 480,
-  "frameHeight": 430,
-  "columns": 6,
-  "rows": 4,
-  "frameCount": 24,
-  "fps": 6
-}

@@ -100,11 +100,6 @@ Use original asset proportions unless the user explicitly asks for scaling.
 When scaling is required, keep it uniform and document the reason in the code or
 asset notes if it is not obvious.
 
-Runtime assets may also include optional generated atlases when the code has a
-feature flag for them. `public/assets/video-idle/chicken-idle-video-atlas.*` is
-used by the `?videoChicken` mode and should not be deleted while that mode
-exists.
-
 ## Reference Material
 
 Visual references are in `references/`:

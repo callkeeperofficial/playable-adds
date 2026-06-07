@@ -1,4 +1,4 @@
-import { AnimatedSprite, Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { multiplierFor, ROAD_HEIGHT, ROUTE_STEPS, STEP_WIDTH, Difficulty } from './config';
 import { playSound } from './audio';
@@ -15,13 +15,6 @@ type StepView = {
 };
 type AmbientVehicle = { sprite: Sprite; speed: number; stepIndex: number; stopY?: number; stopped?: boolean };
 type JumpOptions = { placeBarrier?: boolean };
-type VideoIdleAtlas = {
-  frameWidth: number;
-  frameHeight: number;
-  columns: number;
-  frameCount: number;
-  fps: number;
-};
 
 const WORLD_START = 500;
 const ROAD_TOP = 0;
@@ -36,7 +29,6 @@ const FINAL_STOP_SPEED_PX_PER_SECOND = 115;
 const FINAL_STOP_MIN_MS = 1800;
 const FINAL_STOP_MAX_MS = 2600;
 const MULTIPLIER_BADGE_Y = CHICKEN_Y + 165;
-const USE_VIDEO_CHICKEN = new URLSearchParams(window.location.search).has('videoChicken');
 const frames = {
   lamp: { x: 0, y: 0, w: 455, h: 770 },
   iceTruck: { x: 510, y: 0, w: 385, h: 735 },
@@ -86,8 +78,6 @@ export class GameScene {
   private multiplierText!: Text;
   private objectTexture!: Texture;
   private chickenTexture!: Texture;
-  private videoChickenTexture?: Texture;
-  private videoChickenAtlas?: VideoIdleAtlas;
   private spineChicken?: Spine;
   private startTexture!: Texture;
   private finishTexture!: Texture;
@@ -121,17 +111,9 @@ export class GameScene {
       Assets.load(`${import.meta.env.BASE_URL}assets/win-notification.png`),
       Assets.load(`${import.meta.env.BASE_URL}assets/win-notification-mobile.png`),
     ]);
-    if (USE_VIDEO_CHICKEN) {
-      [this.videoChickenTexture, this.videoChickenAtlas] = await Promise.all([
-        Assets.load(`${import.meta.env.BASE_URL}assets/video-idle/chicken-idle-video-atlas.png`),
-        fetch(`${import.meta.env.BASE_URL}assets/video-idle/chicken-idle-video-atlas.json`).then((response) => response.json()),
-      ]);
-    }
-    if (!USE_VIDEO_CHICKEN) {
-      Assets.add({ alias: 'spineChickenData', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.json` });
-      Assets.add({ alias: 'spineChickenAtlas', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.atlas` });
-      await Assets.load(['spineChickenData', 'spineChickenAtlas']);
-    }
+    Assets.add({ alias: 'spineChickenData', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.json` });
+    Assets.add({ alias: 'spineChickenAtlas', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.atlas` });
+    await Assets.load(['spineChickenData', 'spineChickenAtlas']);
     this.app.stage.addChild(this.world, this.overlay);
     this.drawRoad();
     this.buildMultiplierBadge(difficulty);
@@ -441,7 +423,7 @@ export class GameScene {
   }
 
   private buildChicken() {
-    if (!USE_VIDEO_CHICKEN) {
+    try {
       const spine = Spine.from({
         skeleton: 'spineChickenData',
         atlas: 'spineChickenAtlas',
@@ -458,29 +440,8 @@ export class GameScene {
       this.chicken.hitArea = new Rectangle(-130, -150, 260, 260);
       this.chicken.on('pointertap', () => playSound('chick'));
       return;
-    }
-    if (this.videoChickenTexture && this.videoChickenAtlas) {
-      const textures = Array.from({ length: this.videoChickenAtlas.frameCount }, (_, index) => {
-        const column = index % this.videoChickenAtlas!.columns;
-        const row = Math.floor(index / this.videoChickenAtlas!.columns);
-        return crop(this.videoChickenTexture!, {
-          x: column * this.videoChickenAtlas!.frameWidth,
-          y: row * this.videoChickenAtlas!.frameHeight,
-          w: this.videoChickenAtlas!.frameWidth,
-          h: this.videoChickenAtlas!.frameHeight,
-        });
-      });
-      const sprite = new AnimatedSprite(textures);
-      sprite.anchor.set(0.5, 0.78);
-      sprite.animationSpeed = this.videoChickenAtlas.fps / 60;
-      sprite.play();
-      this.chicken.addChild(sprite);
-      this.chicken.scale.set(0.62);
-      this.chicken.eventMode = 'static';
-      this.chicken.cursor = 'pointer';
-      this.chicken.hitArea = new Rectangle(-150, -230, 300, 270);
-      this.chicken.on('pointertap', () => playSound('chick'));
-      return;
+    } catch {
+      this.spineChicken = undefined;
     }
     const body = new Sprite(crop(this.chickenTexture, { x: 355, y: 90, w: 190, h: 175 }));
     body.anchor.set(0.5);

@@ -14,6 +14,8 @@ type ChickenCrashPublicApi = {
   observePlayMarketButton: (callback: ButtonObserver) => Unsubscribe;
   showGame: () => void;
   hideGame: () => void;
+  showFinalWinScreen: (prize?: number) => void;
+  hideFinalWinScreen: () => void;
 };
 
 declare global {
@@ -37,6 +39,7 @@ let autoplay = false;
 let online = 16_500 + Math.floor(Math.random() * 230);
 let liveWin: UiState['liveWin'];
 let goBlocked = false;
+let finalWinPrize = 0;
 let gameVisible = true;
 const AUTOPLAY_DELAY_MS = 180;
 
@@ -77,6 +80,7 @@ function state(): UiState {
     goBlocked,
     online,
     finalWin: phase === 'won',
+    finalWinPrize: phase === 'won' ? finalWinPrize : undefined,
     liveWin,
   };
 }
@@ -159,6 +163,7 @@ async function attemptStep() {
     render();
     autoplay = false;
     const prize = Number((roundValue + stake * 5).toFixed(2));
+    finalWinPrize = prize;
     bank(prize);
     await scene.finish();
     if (!gameVisible) return;
@@ -252,10 +257,26 @@ function hideGame() {
   stepIndex = -1;
   roundValue = 0;
   goBlocked = false;
+  finalWinPrize = 0;
   scene.reset(difficulty);
   render();
   scene.setPaused(true);
   root.hidden = true;
+}
+
+function showFinalWinScreen(prize = 42.12) {
+  if (!gameVisible) showGame();
+  autoplay = false;
+  finalWinPrize = Number(prize.toFixed(2));
+  phase = 'won';
+  goBlocked = false;
+  render();
+}
+
+function hideFinalWinScreen() {
+  if (phase !== 'won') return;
+  finalWinPrize = 0;
+  resetRound();
 }
 
 render();
@@ -265,6 +286,8 @@ window.ChickenCrash = {
   observePlayMarketButton: (callback) => subscribe(playMarketObservers, callback),
   showGame,
   hideGame,
+  showFinalWinScreen,
+  hideFinalWinScreen,
 };
 window.addEventListener('resize', () => {
   if (gameVisible) scene.resize(ui.getCanvasHost());

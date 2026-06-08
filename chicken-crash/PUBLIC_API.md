@@ -10,6 +10,8 @@ type ChickenCrashPublicApi = {
   observePlayMarketButton(callback: (event: MouseEvent) => void): () => void;
   showGame(): void;
   hideGame(): void;
+  showFinalWinScreen(prize?: number): void;
+  hideFinalWinScreen(): void;
 };
 ```
 
@@ -59,6 +61,26 @@ window.ChickenCrash.hideGame();
 Use `hideGame()` when the host needs to fully remove the playable from view,
 for example after routing away from the ad placement or replacing it with a
 native install flow.
+
+## Final Win Screen Preview
+
+`showFinalWinScreen(prize?)` opens the persistent final win overlay with the
+`Install` and `Download from Play Market` buttons. The optional `prize` argument
+sets the dollar amount shown in the yellow badge. It defaults to `42.12`.
+
+```js
+window.ChickenCrash.showFinalWinScreen(128.5);
+```
+
+`hideFinalWinScreen()` closes that overlay and returns the playable to the
+ready state.
+
+```js
+window.ChickenCrash.hideFinalWinScreen();
+```
+
+Use these methods for host-page QA or design review without completing a full
+route.
 
 ## Public Files
 

@@ -12,6 +12,7 @@ export type UiState = {
   goBlocked: boolean;
   online: number;
   finalWin: boolean;
+  finalWinPrize?: number;
   liveWin?: { name: string; amount: number };
 };
 
@@ -32,6 +33,7 @@ export class GameUi {
   private readonly root: HTMLElement;
   private readonly handlers: UiHandlers;
   private finalWinVisible = false;
+  private finalWinPrizeShown?: number;
   private shellReady = false;
 
   constructor(root: HTMLElement, handlers: UiHandlers) {
@@ -43,7 +45,7 @@ export class GameUi {
     this.ensureShell();
     const locked = state.active || state.busy;
     this.updateDecorations(state);
-    this.renderFinalWin(state.finalWin);
+    this.renderFinalWin(state.finalWin, state.finalWinPrize);
     const controls = this.root.querySelector<HTMLElement>('.controls')!;
     controls.className = `controls ${state.active ? 'round-active' : 'round-ready'}`;
     controls.innerHTML = `
@@ -122,9 +124,17 @@ export class GameUi {
     this.shellReady = true;
   }
 
-  private renderFinalWin(visible: boolean) {
-    if (visible === this.finalWinVisible) return;
+  private renderFinalWin(visible: boolean, prize?: number) {
     const slot = this.root.querySelector<HTMLElement>('.final-win-slot')!;
+    if (!visible) {
+      if (!this.finalWinVisible) return;
+      slot.innerHTML = '';
+      this.finalWinVisible = false;
+      this.finalWinPrizeShown = undefined;
+      return;
+    }
+    const nextPrize = prize ?? 0;
+    if (this.finalWinVisible && this.finalWinPrizeShown === nextPrize) return;
     slot.innerHTML = visible
       ? `
         <section
@@ -132,17 +142,24 @@ export class GameUi {
           aria-label="Win install prompt"
           style="--win-bg: url('${publicPath}assets/win-notification.png'); --win-bg-mobile: url('${publicPath}assets/win-notification-mobile.png')"
         >
+          <div class="final-win-badge">
+            <h1 class="final-win-title">YOU WON</h1>
+            <p class="final-win-amount">$${money(prize ?? 0)}</p>
+          </div>
           <div class="final-win-card">
-            <h1>YOU WON</h1>
             <div class="final-win-actions">
-              <button type="button" class="final-win-install">Install</button>
+              <button type="button" class="final-win-install">
+                Install
+                <span class="final-win-cash-tag" aria-hidden="true">Real Cash</span>
+              </button>
               <button type="button" class="final-win-market">Download from Play Market</button>
             </div>
           </div>
         </section>
       `
       : '';
-    this.finalWinVisible = visible;
+    this.finalWinVisible = true;
+    this.finalWinPrizeShown = nextPrize;
     this.bindFinalWin();
   }
 

@@ -87,40 +87,55 @@
   position: relative;
   z-index: 1;
   width: min(596px, 88vw);
-  height: 300px;
+  aspect-ratio: 596 / 254;
   padding: 0;
+  overflow: visible;
   background: var(--win-bg) center / 100% 100% no-repeat;
 }
-#chicken-crash-playable .final-win-card h1 {
+#chicken-crash-playable .final-win-badge {
   position: absolute;
-  top: 32%;
+  top: 30%;
   left: 50%;
-  width: 44%;
-  margin: 0;
+  z-index: 2;
   transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+#chicken-crash-playable .final-win-title,
+#chicken-crash-playable .final-win-amount {
+  margin: 0;
   color: #fff;
-  font-size: 34px;
   line-height: 1;
   font-weight: 900;
   text-align: center;
   white-space: nowrap;
   text-shadow: 0 3px 3px rgba(0,0,0,.45);
 }
+#chicken-crash-playable .final-win-title { font-size: clamp(20px, 4.2vw, 34px); }
+#chicken-crash-playable .final-win-amount { font-size: clamp(26px, 6.5vw, 52px); }
 #chicken-crash-playable .final-win-actions {
   position: absolute;
-  top: 44%;
-  left: 50%;
-  width: min(460px, 100%);
-  transform: translateX(-50%);
-  padding: 14px;
+  top: 32%;
+  right: 5.5%;
+  bottom: 5%;
+  left: 5.5%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  padding: 14px;
+  overflow: visible;
   border: 4px solid #35cf63;
   border-radius: 18px;
   background: rgba(35, 82, 48, .9);
 }
 #chicken-crash-playable .final-win-actions button {
+  flex: 1 1 0;
   width: 100%;
   min-height: 58px;
   padding: 0 18px;
@@ -129,7 +144,47 @@
   font-size: 24px;
   line-height: 1.05;
 }
-#chicken-crash-playable .final-win-install { background: #3dcc5e !important; font-size: 34px; }
+#chicken-crash-playable .final-win-install {
+  position: relative;
+  overflow: visible;
+  background: #3dcc5e !important;
+  font-size: 34px;
+}
+#chicken-crash-playable .final-win-cash-tag {
+  position: absolute;
+  top: -16px;
+  right: -4px;
+  z-index: 2;
+  min-width: 78px;
+  padding: 13px 10px 9px;
+  border: 2px solid #fff;
+  border-radius: 7px 7px 9px 9px;
+  background:
+    radial-gradient(circle at 50% 7px, #292b2c 0 4px, transparent 4.5px),
+    linear-gradient(180deg, #ff6d4d 0%, #ea2a2a 58%, #c81616 100%);
+  box-shadow: 0 5px 8px rgba(0,0,0,.35);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.05;
+  text-align: center;
+  letter-spacing: .02em;
+  transform: rotate(14deg);
+  transform-origin: top center;
+  pointer-events: none;
+}
+#chicken-crash-playable .final-win-cash-tag::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -8px;
+  width: 14px;
+  height: 14px;
+  transform: translateX(-50%) rotate(45deg);
+  background: #c81616;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+}
 #chicken-crash-playable .final-win-market { background: #ffd15c !important; color: #171b27; font-size: 24px !important; }
 @media (max-width: 999px) {
   #chicken-crash-playable .topbar { height: calc(50px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0; gap: 10px; }
@@ -203,26 +258,36 @@
   #chicken-crash-playable .final-win-overlay { padding: 12px; align-items: center; }
   #chicken-crash-playable .final-win-card {
     width: min(520px, 96vw);
-    height: 286px;
+    min-height: 286px;
+    aspect-ratio: 520 / 196;
     background-image: var(--win-bg-mobile);
   }
-  #chicken-crash-playable .final-win-card h1 {
-    top: 34%;
-    width: 42%;
-    font-size: clamp(21px, 7vw, 28px);
-  }
+  #chicken-crash-playable .final-win-badge { gap: 1px; }
+  #chicken-crash-playable .final-win-badge { top: 28%; }
+  #chicken-crash-playable .final-win-title { font-size: clamp(18px, 5.5vw, 28px); }
+  #chicken-crash-playable .final-win-amount { font-size: clamp(24px, 8vw, 40px); }
   #chicken-crash-playable .final-win-actions {
-    top: 45%;
-    width: min(420px, 92vw);
+    top: 32%;
+    right: 5%;
+    bottom: 5%;
+    left: 5%;
     padding: 12px;
     gap: 12px;
     border-width: 3px;
-    border-radius: 18px;
+    border-radius: 16px;
   }
   #chicken-crash-playable .final-win-actions button {
+    flex: 1 1 0;
     min-height: 54px;
     border-radius: 14px;
   }
   #chicken-crash-playable .final-win-install { font-size: 32px; }
+  #chicken-crash-playable .final-win-cash-tag {
+    top: -12px;
+    right: -2px;
+    min-width: 68px;
+    padding: 11px 8px 8px;
+    font-size: 9px;
+  }
   #chicken-crash-playable .final-win-market { font-size: clamp(16px, 4.8vw, 19px) !important; }
 }

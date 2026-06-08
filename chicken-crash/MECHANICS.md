@@ -52,7 +52,10 @@ roundValue = stake * multiplierFor(difficulty, stepIndex)
 ```
 
 - Multipliers and collision chances are generated from `src/config.ts`.
-- Higher difficulties have larger multiplier growth and higher collision risk.
+- Multipliers use a compound curve: `base * stepFactor ^ step`. Early manholes
+  grow slowly, later manholes accelerate so cash-out tension rises sharply.
+- Higher difficulties have larger base multipliers, faster step factors, and
+  higher collision risk.
 - The default `easy` curve is tuned so a full route win is plausible around
   every couple of attempts, while higher difficulties remain progressively
   riskier.
@@ -121,7 +124,8 @@ When the chicken reaches the last route step:
   stops before the final win notification appears.
   The camera locks to the chicken's current screen position through this
   movement so it remains visible without a final jump.
-- Show the final win notification as a DOM overlay without a dollar amount.
+- Show the final win notification as a DOM overlay with the awarded prize
+  amount (`roundValue + stake * 5`).
 - Show two vertically stacked CTA buttons: `Install` and
   `Download from play market`.
 - Play `win.webm`.
@@ -307,7 +311,7 @@ Cash Out and final route completion use different notification behavior:
 
 - Cash Out shows the PixiJS win notification with the awarded amount, then
   clears before the next round starts.
-- Final route completion shows a persistent DOM overlay without a dollar
+- Final route completion shows a persistent DOM overlay with the awarded prize
   amount. It contains the `Install` and `Download from play market` CTA buttons
   and does not reset the round.
 

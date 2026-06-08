@@ -46,6 +46,25 @@ workflow may be updated when they are needed to register or publish a playable.
   work complete. Mobile verification must include a narrow phone-sized viewport,
   not only desktop browser resizing.
 
+## Runtime Asset Loading
+
+Avoid leaky asset loading. A playable must not repeatedly request the same
+static runtime asset because UI, canvas, or audio objects are recreated during
+normal state updates.
+
+Before considering asset-related UI, audio, or scene work complete:
+
+- Check that DOM renders do not recreate stable images, videos, canvases, or
+  other media elements on every state update.
+- Check that sound playback does not create new `Audio` elements or trigger
+  repeated network requests for the same sound during normal gameplay.
+- Prefer stable DOM shells, cached image/video references, PixiJS asset caches,
+  and one-time decoded audio buffers over rebuilding media nodes in render
+  loops.
+- Verify the browser Network panel or an equivalent request counter for obvious
+  repeated requests to static files such as logos, sprites, atlases, videos, and
+  audio files.
+
 ## Local Development
 
 Run each playable from its own directory with a fixed port so browser checks

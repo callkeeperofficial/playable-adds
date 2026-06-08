@@ -86,25 +86,31 @@
   position: relative;
   z-index: 1;
   width: min(596px, 88vw);
-  min-height: 300px;
-  padding: 44px 44px 42px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 22px;
+  height: 300px;
+  padding: 0;
   background: var(--win-bg) center / 100% 100% no-repeat;
 }
 #chicken-crash-playable .final-win-card h1 {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  width: 44%;
   margin: 0;
+  transform: translate(-50%, -50%);
   color: #fff;
   font-size: 34px;
   line-height: 1;
   font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
   text-shadow: 0 3px 3px rgba(0,0,0,.45);
 }
 #chicken-crash-playable .final-win-actions {
+  position: absolute;
+  top: 44%;
+  left: 50%;
   width: min(460px, 100%);
+  transform: translateX(-50%);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -116,12 +122,14 @@
 #chicken-crash-playable .final-win-actions button {
   width: 100%;
   min-height: 58px;
-  border-radius: 8px;
-  box-shadow: 0 7px 10px rgba(0,0,0,.28);
-  font-size: 28px;
+  padding: 0 18px;
+  border-radius: 16px;
+  box-shadow: 0 8px 8px rgba(0,0,0,.28);
+  font-size: 24px;
+  line-height: 1.05;
 }
-#chicken-crash-playable .final-win-install { background: #36d05f; }
-#chicken-crash-playable .final-win-market { background: #fff; color: #242424; font-size: 22px !important; }
+#chicken-crash-playable .final-win-install { background: #3dcc5e !important; font-size: 34px; }
+#chicken-crash-playable .final-win-market { background: #ffd15c !important; color: #171b27; font-size: 24px !important; }
 @media (max-width: 999px) {
   #chicken-crash-playable .topbar { height: calc(50px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0; gap: 10px; }
   #chicken-crash-playable .logo { width: clamp(140px, 39vw, 185px); flex: 0 1 auto; }
@@ -194,13 +202,16 @@
   #chicken-crash-playable .final-win-overlay { padding: 12px; align-items: center; }
   #chicken-crash-playable .final-win-card {
     width: min(520px, 96vw);
-    min-height: 286px;
-    padding: 34px 18px 28px;
-    gap: 16px;
+    height: 286px;
     background-image: var(--win-bg-mobile);
   }
-  #chicken-crash-playable .final-win-card h1 { font-size: clamp(24px, 8vw, 34px); }
+  #chicken-crash-playable .final-win-card h1 {
+    top: 34%;
+    width: 42%;
+    font-size: clamp(21px, 7vw, 28px);
+  }
   #chicken-crash-playable .final-win-actions {
+    top: 45%;
     width: min(420px, 92vw);
     padding: 12px;
     gap: 12px;
@@ -209,7 +220,8 @@
   }
   #chicken-crash-playable .final-win-actions button {
     min-height: 54px;
-    font-size: 30px;
+    border-radius: 14px;
   }
-  #chicken-crash-playable .final-win-market { font-size: clamp(17px, 5.2vw, 23px) !important; }
+  #chicken-crash-playable .final-win-install { font-size: 32px; }
+  #chicken-crash-playable .final-win-market { font-size: clamp(16px, 4.8vw, 19px) !important; }
 }

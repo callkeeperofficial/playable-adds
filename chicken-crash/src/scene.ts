@@ -2,6 +2,7 @@ import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, Text
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { multiplierFor, ROAD_HEIGHT, ROUTE_STEPS, STEP_WIDTH, Difficulty } from './config';
 import { playSound } from './audio';
+import { publicPath } from './publicPath';
 
 type Frame = { x: number; y: number; w: number; h: number };
 type StepQuality = 'muted' | 'active' | 'passed' | 'hidden';
@@ -104,15 +105,15 @@ export class GameScene {
       this.winNotificationTexture,
       this.winNotificationMobileTexture,
     ] = await Promise.all([
-      Assets.load(`${import.meta.env.BASE_URL}assets/objects-sprite.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/chicken-sprite.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/start-bg.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/finish-bg.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/win-notification.png`),
-      Assets.load(`${import.meta.env.BASE_URL}assets/win-notification-mobile.png`),
+      Assets.load(`${publicPath}assets/objects-sprite.png`),
+      Assets.load(`${publicPath}assets/chicken-sprite.png`),
+      Assets.load(`${publicPath}assets/start-bg.png`),
+      Assets.load(`${publicPath}assets/finish-bg.png`),
+      Assets.load(`${publicPath}assets/win-notification.png`),
+      Assets.load(`${publicPath}assets/win-notification-mobile.png`),
     ]);
-    Assets.add({ alias: 'spineChickenData', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.json` });
-    Assets.add({ alias: 'spineChickenAtlas', src: `${import.meta.env.BASE_URL}assets/spine/chiken/chiken.atlas` });
+    Assets.add({ alias: 'spineChickenData', src: `${publicPath}assets/spine/chiken/chiken.json` });
+    Assets.add({ alias: 'spineChickenAtlas', src: `${publicPath}assets/spine/chiken/chiken.atlas` });
     await Assets.load(['spineChickenData', 'spineChickenAtlas']);
     this.app.stage.addChild(this.world, this.overlay);
     this.drawRoad();

@@ -48,7 +48,7 @@ export class GameUi {
     controls.className = `controls ${state.active ? 'round-active' : 'round-ready'}`;
     controls.innerHTML = `
       <div class="stakes">
-        <div class="stepper panel">
+        <div class="stepper panel${locked ? ' locked' : ''}">
           <button data-stake="${STAKES[0]}" ${locked ? 'disabled' : ''}>MIN</button>
           <strong>${state.stake}</strong>
           <button data-stake="${STAKES[STAKES.length - 1]}" ${locked ? 'disabled' : ''}>MAX</button>
@@ -136,7 +136,7 @@ export class GameUi {
             <h1>YOU WON</h1>
             <div class="final-win-actions">
               <button type="button" class="final-win-install">Install</button>
-              <button type="button" class="final-win-market">Download from play market</button>
+              <button type="button" class="final-win-market">Download from Play Market</button>
             </div>
           </div>
         </section>

@@ -99,7 +99,7 @@ export class GameUi {
     if (this.shellReady) return;
     this.root.innerHTML = `
       <header class="topbar">
-        <img class="logo" src="${publicPath}assets/logo.png" alt="Chicken Crush" />
+        <img class="logo" src="${publicPath}assets/logo.png" alt="Chicken Crash" />
         <div class="header-actions">
           <button class="top-action how">ⓘ&nbsp; How to play?</button>
           <div class="pool"><b></b> <span>$</span></div>

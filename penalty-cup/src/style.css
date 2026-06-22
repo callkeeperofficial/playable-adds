@@ -2,7 +2,18 @@
 * { box-sizing: border-box; letter-spacing: 0; }
 html, body, #penalty-cup { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 body { overscroll-behavior: none; touch-action: none; background: #080c0e; }
-#penalty-cup { position: relative; isolation: isolate; background: #080c0e; }
+#penalty-cup {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  isolation: isolate;
+  overflow: hidden;
+  background: #080c0e;
+}
+@supports (height: 100dvh) {
+  #penalty-cup { height: 100dvh; }
+}
 canvas { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; }
 button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .game-ui { position: absolute; left: 50%; top: 50%; z-index: 10; width: 390px; height: 844px; overflow: hidden; transform-origin: center; pointer-events: none; color: #fff; }

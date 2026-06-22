@@ -45,8 +45,6 @@ function notifyObservers(observers: Set<ButtonObserver>, event: MouseEvent): voi
 const host = document.querySelector<HTMLElement>('#penalty-cup');
 if (!host) throw new Error('Missing #penalty-cup host');
 
-host.innerHTML = '<div style="display:grid;place-items:center;width:100%;height:100%;color:#fff;font:700 14px Arial">LOADING PENALTY CUP…</div>';
-
 await loadAssets();
 host.innerHTML = '';
 const game = new GoalJackpot();

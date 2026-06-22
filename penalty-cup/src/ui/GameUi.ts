@@ -5,7 +5,6 @@ import type { Difficulty, GameState } from '../game/types';
 import { COUNTRIES, flagStyle } from './flags';
 
 type UiCallbacks = {
-  confirmCountry: (flag: number) => void;
   cycleDifficulty: () => void;
   cycleBet: () => void;
   claim: () => void;
@@ -121,31 +120,6 @@ export class GameUi {
   clearStatus(): void {
     this.status.textContent = '';
     this.status.dataset.tone = 'default';
-  }
-
-  showCountrySelect(): void {
-    let selected = Math.floor(Math.random() * COUNTRIES.length);
-    this.modalLayer.innerHTML = `
-      <div class="modal-scrim"></div>
-      <section class="country-modal" role="dialog" aria-modal="true" aria-label="Choose your country">
-        <h1>CHOOSE YOUR COUNTRY</h1>
-        <h2 data-country-name>${COUNTRIES[selected].toUpperCase()}</h2>
-        <div class="flag-grid">
-          ${COUNTRIES.map((country, index) => `<button class="flag-choice${index === selected ? ' selected' : ''}" data-flag="${index}" aria-label="${country}" title="${country}"><span class="flag-sprite" style="${flagStyle(index)}"></span></button>`).join('')}
-        </div>
-        <label class="remember"><input type="checkbox"> Don't show again</label>
-        <button class="confirm-country">CONFIRM</button>
-      </section>`;
-    const name = this.modalLayer.querySelector<HTMLElement>('[data-country-name]')!;
-    this.modalLayer.querySelectorAll<HTMLButtonElement>('[data-flag]').forEach((choice) => {
-      choice.addEventListener('click', () => {
-        selected = Number(choice.dataset.flag);
-        this.modalLayer.querySelector('.flag-choice.selected')?.classList.remove('selected');
-        choice.classList.add('selected');
-        name.textContent = COUNTRIES[selected].toUpperCase();
-      });
-    });
-    this.modalLayer.querySelector('.confirm-country')?.addEventListener('click', () => this.callbacks.confirmCountry(selected));
   }
 
   showBonus(initialBet: number, onClose: () => void, onBuy: (difficulty: Difficulty, bet: number) => void): void {

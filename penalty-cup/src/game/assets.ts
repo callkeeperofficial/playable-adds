@@ -1,8 +1,9 @@
 import { Assets, type Texture } from 'pixi.js';
 import '@esotericsoftware/spine-pixi-v8';
+import { publicPath } from '../publicPath';
 import { WIN_BACKGROUND_FILES } from './winConfig';
 
-const base = `${import.meta.env.BASE_URL}assets/`;
+const base = `${publicPath}assets/`;
 const spineNames = [
   'background',
   'gates',

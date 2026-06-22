@@ -1,7 +1,9 @@
+import { AttachmentTimeline } from '@esotericsoftware/spine-core';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
 import { Application, Circle, Container, Graphics, type Ticker } from 'pixi.js';
 import { WinOverlay } from '../components/WinOverlay';
 import { GameUi } from '../ui/GameUi';
+import { FLAG_COUNT } from '../ui/flags';
 import { sleep } from '../ui/primitives';
 import { BETS, BONUS_CONFIG, DESIGN_HEIGHT, DESIGN_WIDTH, MULTIPLIERS, SAVE_CHANCE } from './config';
 import { GOAL_LAYOUT, SCENE_LAYOUT } from './layout';
@@ -31,6 +33,7 @@ export class GoalJackpot {
   private readonly targets = new Container();
   private host!: HTMLElement;
   private gameVisible = true;
+  private needsResetOnShow = false;
   private finalWinVisible = false;
   private finalWinPreview = false;
   private countryConfirmed = false;
@@ -40,9 +43,11 @@ export class GoalJackpot {
 
   async mount(host: HTMLElement): Promise<void> {
     this.host = host;
+    const width = Math.max(1, host.clientWidth || window.innerWidth);
+    const height = Math.max(1, host.clientHeight || window.innerHeight);
     await this.app.init({
-      width: host.clientWidth,
-      height: host.clientHeight,
+      width,
+      height,
       background: '#101416',
       antialias: true,
       resolution: Math.min(window.devicePixelRatio, 2),
@@ -54,7 +59,6 @@ export class GoalJackpot {
     this.scene.mask = this.viewportMask;
     this.effectLayer.mask = this.viewportMask;
     this.ui = new GameUi(host, {
-      confirmCountry: (flag) => this.confirmCountry(flag),
       cycleDifficulty: () => this.cycleDifficulty(),
       cycleBet: () => this.cycleBet(),
       claim: () => this.claim(),
@@ -63,8 +67,8 @@ export class GoalJackpot {
       onPlayMarketClick: (event) => this.onPlayMarketClick(event),
     });
     this.buildScene();
-    this.resize(host.clientWidth, host.clientHeight);
-    this.showCountrySelect();
+    this.resize(width, height);
+    this.autoSelectCountry();
   }
 
   resize(width: number, height: number): void {
@@ -124,9 +128,8 @@ export class GoalJackpot {
     }
   }
 
-  private showCountrySelect(): void {
-    this.state = 'country_select';
-    this.ui.showCountrySelect();
+  private autoSelectCountry(): void {
+    this.confirmCountry(Math.floor(Math.random() * FLAG_COUNT));
   }
 
   private confirmCountry(flag: number): void {
@@ -298,12 +301,19 @@ export class GoalJackpot {
     this.host.hidden = false;
     this.gameVisible = true;
     this.app.ticker.start();
-    this.resetPlayable();
-    this.resize(this.host.clientWidth, this.host.clientHeight);
+    this.resize(
+      Math.max(1, this.host.clientWidth || window.innerWidth),
+      Math.max(1, this.host.clientHeight || window.innerHeight),
+    );
+    if (this.needsResetOnShow) {
+      this.resetPlayable();
+      this.needsResetOnShow = false;
+    }
   }
 
   hideGame(): void {
     this.gameVisible = false;
+    this.needsResetOnShow = true;
     this.app.canvas.style.pointerEvents = 'auto';
     this.dismissFinalWinScreen(false);
     this.ui.clearModal();
@@ -358,7 +368,7 @@ export class GoalJackpot {
     this.state = this.countryConfirmed ? 'idle_before_kick' : 'country_select';
     this.background.state.setAnimation(0, 'background', true);
     this.resetActors();
-    if (!this.countryConfirmed) this.ui.showCountrySelect();
+    if (!this.countryConfirmed) this.autoSelectCountry();
     this.syncUi();
   }
 
@@ -370,9 +380,7 @@ export class GoalJackpot {
     this.currentStep = 0;
     this.roundPaid = false;
     if (!this.countryConfirmed) {
-      this.state = 'country_select';
-      this.showCountrySelect();
-      this.syncUi();
+      this.autoSelectCountry();
       return;
     }
     this.state = 'idle_before_kick';
@@ -435,15 +443,18 @@ export class GoalJackpot {
 
     const targetGreen = this.ball.skeleton.data.findAnimation('target_green')!;
     targetGreen.setTimelines(targetGreen.timelines.filter((timeline) => {
-      const slotTimeline = timeline as { slotIndex?: number };
-      if (timeline.constructor.name !== 'AttachmentTimeline') return true;
-      if (slotTimeline.slotIndex === undefined) return true;
-      return !stripSlotIndices.has(slotTimeline.slotIndex);
+      if (!(timeline instanceof AttachmentTimeline)) return true;
+      return !stripSlotIndices.has(timeline.slotIndex);
     }));
   }
 
   private hideBallBranding(): void {
     this.ball.skeleton.findSlot('InOut Logo – White (1) 1')!.setAttachment(null);
+  }
+
+  private ensureBallMeshAttachments(): void {
+    this.ball.skeleton.setAttachment('5551', '5551');
+    this.ball.skeleton.setAttachment('5555', '5555');
   }
 
   private setBallIdle(): void {
@@ -454,7 +465,9 @@ export class GoalJackpot {
     this.ball.state.clearTracks();
     this.ball.skeleton.setToSetupPose();
     this.hideBallBranding();
+    this.ensureBallMeshAttachments();
     this.ball.state.setAnimation(0, 'target_green', true);
+    this.ensureBallMeshAttachments();
   }
 
   private setBallDepth(behindGoalkeeper: boolean): void {

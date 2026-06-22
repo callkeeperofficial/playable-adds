@@ -344,7 +344,7 @@ Embed readiness:
 | --- | --- | --- | --- |
 | Chicken Crash | yes | yes | `#chicken-crash-playable` |
 | Chicken Road | yes | yes | `#chicken-road` |
-| Penalty Cup | **todo** | verify | **todo** (`app` → `#penalty-cup`) |
+| Penalty Cup | yes | yes | `#penalty-cup` |
 
 Reference implementations:
 

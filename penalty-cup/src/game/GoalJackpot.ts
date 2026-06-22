@@ -1,6 +1,6 @@
 import { AttachmentTimeline } from '@esotericsoftware/spine-core';
 import { Spine } from '@esotericsoftware/spine-pixi-v8';
-import { Application, Circle, Container, Graphics, type Ticker } from 'pixi.js';
+import { Application, Container, Graphics, type Ticker } from 'pixi.js';
 import { WinOverlay } from '../components/WinOverlay';
 import { GameUi } from '../ui/GameUi';
 import { FLAG_COUNT } from '../ui/flags';
@@ -59,6 +59,7 @@ export class GoalJackpot {
     this.scene.mask = this.viewportMask;
     this.effectLayer.mask = this.viewportMask;
     this.ui = new GameUi(host, {
+      shootBall: () => void this.kick(this.randomZone()),
       cycleDifficulty: () => this.cycleDifficulty(),
       cycleBet: () => this.cycleBet(),
       claim: () => this.claim(),
@@ -102,10 +103,6 @@ export class GoalJackpot {
 
     this.ball = Spine.from({ skeleton: 'ballData', atlas: 'ballAtlas' });
     this.prepareIdleBallAnimation();
-    this.ball.eventMode = 'static';
-    this.ball.cursor = 'pointer';
-    this.ball.hitArea = new Circle(0, 0, 72);
-    this.ball.on('pointertap', () => void this.kick(this.randomZone()));
     this.scene.addChild(this.background, this.gates, this.goalkeeper, this.targets, this.ball);
     this.setBallIdle();
     this.syncUi();
@@ -152,7 +149,6 @@ export class GoalJackpot {
     }
     this.state = isBonus ? 'bonus_ball_flying' : 'ball_flying';
     this.targets.eventMode = 'none';
-    this.ball.eventMode = 'none';
     const save = Math.random() < SAVE_CHANCE[this.difficulty];
     const keeperZone = save ? zone : this.otherZone(zone);
     this.ball.state.clearTracks();
@@ -416,7 +412,6 @@ export class GoalJackpot {
     this.resetGates();
     this.goalkeeper.state.setAnimation(0, 'idle', true);
     this.targets.eventMode = 'static';
-    this.ball.eventMode = 'static';
     if (resetStatus) this.ui.clearStatus();
   }
 

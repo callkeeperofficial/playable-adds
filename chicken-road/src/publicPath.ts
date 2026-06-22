@@ -7,5 +7,5 @@ export function assetUrl(name: string): string {
 
   const base = import.meta.env.BASE_URL;
   const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  return `${normalizedBase}${name}`;
+  return `${normalizedBase}assets/${name}`;
 }

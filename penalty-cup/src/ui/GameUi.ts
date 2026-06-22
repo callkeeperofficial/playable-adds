@@ -5,6 +5,7 @@ import type { Difficulty, GameState } from '../game/types';
 import { COUNTRIES, flagStyle } from './flags';
 
 type UiCallbacks = {
+  shootBall: () => void;
   cycleDifficulty: () => void;
   cycleBet: () => void;
   claim: () => void;
@@ -39,6 +40,7 @@ export class GameUi {
   private readonly difficultyButton: HTMLButtonElement;
   private readonly betButton: HTMLButtonElement;
   private readonly buyBonusButton: HTMLButtonElement;
+  private readonly ballHitButton: HTMLButtonElement;
   private readonly playerFlag: HTMLElement;
   private bonusBetIndex = 0;
   private multiplierKey = '';
@@ -52,6 +54,7 @@ export class GameUi {
       </header>
       <section class="multiplier" data-ui="multiplier" aria-label="Multiplier progress"></section>
       <div class="status" data-ui="status" data-tone="default"></div>
+      <button class="ball-hit-button" data-action="shoot" aria-label="Shoot ball"></button>
       <div class="team-bar">
         <div class="teams"><span class="flag-sprite" data-ui="player-flag" role="img" aria-label="Your team"></span><b>VS</b><span class="flag-sprite" style="${flagStyle(8)}" role="img" aria-label="Opponent"></span></div>
         <button class="buy-bonus">BUY BONUS</button>
@@ -78,11 +81,13 @@ export class GameUi {
     this.difficultyButton = this.get<HTMLButtonElement>('[data-action="difficulty"]');
     this.betButton = this.get<HTMLButtonElement>('[data-action="bet"]');
     this.buyBonusButton = this.get<HTMLButtonElement>('.buy-bonus');
+    this.ballHitButton = this.get<HTMLButtonElement>('[data-action="shoot"]');
     this.playerFlag = this.get('[data-ui="player-flag"]');
     this.difficultyButton.addEventListener('click', callbacks.cycleDifficulty);
     this.betButton.addEventListener('click', callbacks.cycleBet);
     this.claimButton.addEventListener('click', callbacks.claim);
     this.buyBonusButton.addEventListener('click', callbacks.openBonus);
+    this.ballHitButton.addEventListener('click', callbacks.shootBall);
   }
 
   resize(width: number, height: number): void {
@@ -103,6 +108,8 @@ export class GameUi {
     this.playerFlag.setAttribute('aria-label', COUNTRIES[model.playerFlag] ?? 'Your team');
     const claimAmount = model.bet * MULTIPLIERS[model.difficulty][model.step];
     const canClaim = model.state === 'claim_available';
+    const canShoot = model.state === 'idle_before_kick' || model.state === 'claim_available' || model.state === 'bonus_shot_idle';
+    this.ballHitButton.disabled = !canShoot;
     this.claimButton.disabled = !canClaim;
     this.claimAmount.hidden = !canClaim;
     this.claimAmount.textContent = money(claimAmount);

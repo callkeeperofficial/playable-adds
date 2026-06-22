@@ -1,7 +1,5 @@
-:root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; background: #080c0e; }
-* { box-sizing: border-box; letter-spacing: 0; }
-html, body, #penalty-cup { width: 100%; height: 100%; margin: 0; overflow: hidden; }
-body { overscroll-behavior: none; touch-action: none; background: #080c0e; }
+html, body { width: 100%; height: 100%; margin: 0; }
+#penalty-cup, #penalty-cup * { box-sizing: border-box; letter-spacing: 0; }
 #penalty-cup {
   position: fixed;
   inset: 0;
@@ -9,13 +7,17 @@ body { overscroll-behavior: none; touch-action: none; background: #080c0e; }
   height: 100vh;
   isolation: isolate;
   overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  color-scheme: dark;
+  font-family: Arial, Helvetica, sans-serif;
   background: #080c0e;
 }
 @supports (height: 100dvh) {
   #penalty-cup { height: 100dvh; }
 }
-canvas { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; }
-button { border: 0; color: inherit; font: inherit; cursor: pointer; }
+#penalty-cup canvas { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; }
+#penalty-cup button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .game-ui { position: absolute; left: 50%; top: 50%; z-index: 10; width: 390px; height: 844px; overflow: hidden; transform-origin: center; pointer-events: none; color: #fff; }
 .game-ui button, .game-ui input, .modal-layer { pointer-events: auto; }
 .topbar { position: absolute; inset: 0 0 auto; height: 50px; display: flex; align-items: center; padding: 6px 12px 6px 16px; background: #101416; z-index: 5; }
@@ -36,6 +38,9 @@ button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .status { position: absolute; z-index: 3; left: 0; right: 0; top: 536px; opacity: 0; text-align: center; font-size: 18px; font-weight: 900; text-shadow: 0 2px 5px #000; }
 .status:not([data-tone='default']) { opacity: 1; }
 .status[data-tone='success'] { color: #80ed50; } .status[data-tone='danger'] { color: #ff6d61; } .status[data-tone='gold'] { color: #ffd744; }
+.ball-hit-button { position: absolute; z-index: 5; left: 123px; top: 567px; width: 144px; height: 144px; padding: 0; border-radius: 50%; background: transparent; -webkit-tap-highlight-color: transparent; }
+.ball-hit-button:disabled { pointer-events: none; }
+@media (pointer: coarse) { .ball-hit-button { cursor: default; } }
 .team-bar { position: absolute; z-index: 4; left: 18px; right: 12px; top: 646px; height: 42px; display: flex; align-items: center; justify-content: space-between; }
 .teams { display: flex; align-items: center; gap: 6px; font-size: 19px; }
 .flag-sprite { display: inline-block; flex: 0 0 auto; width: 42px; height: 50px; background-repeat: no-repeat; }

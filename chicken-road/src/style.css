@@ -1,0 +1,120 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111421;
+}
+
+#chicken-road {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111421;
+}
+
+#chicken-road .chicken-road-stage {
+  position: absolute;
+  inset: 0;
+}
+
+#chicken-road .chicken-road-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#chicken-road .final-win-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+#chicken-road .final-win-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+  cursor: default;
+}
+
+#chicken-road .final-win-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 18, 0.62);
+  pointer-events: none;
+}
+
+#chicken-road .final-win-card {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 90vw);
+  padding: 22px 20px 18px;
+  border-radius: 18px;
+  border: 2px solid #62687e;
+  background: linear-gradient(180deg, #555a70 0%, #4d5269 100%);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+  text-align: center;
+  font-family: "Arial", "Helvetica Neue", sans-serif;
+}
+
+#chicken-road .final-win-kicker {
+  margin: 0;
+  color: #ffd15c;
+  font-size: clamp(14px, 3.2vw, 18px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#chicken-road .final-win-title,
+#chicken-road .final-win-amount {
+  margin: 0;
+  color: #ffffff;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+#chicken-road .final-win-amount {
+  margin-top: 6px;
+  font-size: clamp(30px, 7vw, 44px);
+}
+
+#chicken-road .final-win-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px;
+  border: 3px solid #35cf63;
+  border-radius: 14px;
+  background: rgba(23, 52, 34, 0.88);
+}
+
+#chicken-road .final-win-actions button {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  font-size: clamp(17px, 4vw, 22px);
+  font-weight: 900;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+#chicken-road .final-win-install {
+  background: #39c85a;
+  color: #fff;
+}
+
+#chicken-road .final-win-market {
+  background: #ffd15c;
+  color: #171b27;
+}

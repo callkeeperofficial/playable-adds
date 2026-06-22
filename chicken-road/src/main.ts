@@ -1,6 +1,47 @@
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
+import './style.css';
 
-type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead' | 'prize';
+type ButtonObserver = (event: MouseEvent) => void;
+type Unsubscribe = () => void;
+
+type ChickenRoadPublicApi = {
+  observeInstallButton: (callback: ButtonObserver) => Unsubscribe;
+  observePlayMarketButton: (callback: ButtonObserver) => Unsubscribe;
+  showGame: () => void;
+  hideGame: () => void;
+  showFinalWinScreen: (prize?: number) => void;
+  hideFinalWinScreen: () => void;
+};
+
+declare global {
+  interface Window {
+    ChickenRoad: ChickenRoadPublicApi;
+  }
+}
+
+const installObservers = new Set<ButtonObserver>();
+const playMarketObservers = new Set<ButtonObserver>();
+
+function subscribe(observers: Set<ButtonObserver>, callback: ButtonObserver): Unsubscribe {
+  observers.add(callback);
+  return () => {
+    observers.delete(callback);
+  };
+}
+
+function notifyObservers(observers: Set<ButtonObserver>, event: MouseEvent): void {
+  Array.from(observers).forEach((observer) => {
+    try {
+      observer(event);
+    } catch (error) {
+      window.setTimeout(() => {
+        throw error;
+      });
+    }
+  });
+}
+
+type PadState = 'idle' | 'active' | 'passed' | 'burned' | 'dead' | 'prize' | 'back';
 type GameState = 'ready' | 'running' | 'burned' | 'won';
 type FontWeight = 'normal' | 'bold' | '400' | '500' | '600' | '700' | '800' | '900';
 type LayoutInfo = {
@@ -65,14 +106,10 @@ type MiniFireSlot = {
   xOffset: number;
   phase: number;
 };
-type RoundMessage = {
-  title: string;
-  total: number;
-};
-
 const DESIGN_WIDTH = 2048;
 const DESIGN_HEIGHT = 1024;
-const TOP_H = 48;
+const TOP_H = 84;
+const LOGO_DISPLAY_HEIGHT = 170;
 const SIDE_W = 282;
 const STAGE_H = 724;
 const FLOOR_Y = TOP_H + STAGE_H - 52;
@@ -97,9 +134,8 @@ const STAKE_VALUES = [2, 3, 8, 20] as const;
 const DEFAULT_STAKE_AMOUNT: StakeAmount = 3;
 const MOVE_SPEED = 0.018;
 const MOVE_ANIMATION_FPS = 4;
-const AUTO_ADVANCE_DELAY_MS = 520;
+const AUTO_ADVANCE_DELAY_MS = 260;
 const REVIVE_DELAY_MS = 1200;
-const ROUND_MESSAGE_DELAY_MS = 1800;
 const BANK_STORAGE_KEY = 'chicken-road-banked-winnings';
 const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
   idle: `${import.meta.env.BASE_URL}assets/chicken-idle.png`,
@@ -114,6 +150,7 @@ const AUDIO_URLS: Record<SoundKey, string> = {
   win: `${import.meta.env.BASE_URL}assets/audio/win.webm`,
 };
 const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
+const LOGO_URL = `${import.meta.env.BASE_URL}assets/logo.png`;
 const DECORS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/decors.png`;
 const MINI_FIRE_SPRITE_URL = `${import.meta.env.BASE_URL}assets/mini-fire.png`;
 const BURN_FIRE_FRAME_URLS = Array.from({ length: 6 }, (_, index) => `${import.meta.env.BASE_URL}assets/fire-burn-${index + 1}.png`);
@@ -160,7 +197,18 @@ const MINI_FIRE_FRAMES: FrameRect[] = [
   { x: 937, y: 334, w: 85, h: 95 },
   { x: 536, y: 341, w: 88, h: 88 },
 ];
-const MINI_FIRE_CHANCE = 0.32;
+const DIFFICULTY_FIRE_PAD_CHANCES: Record<Difficulty, number> = {
+  easy: 0.18,
+  medium: 0.26,
+  hard: 0.34,
+  hardcore: 0.44,
+};
+const DIFFICULTY_ROAST_CHANCES: Record<Difficulty, { base: number; step: number; max: number }> = {
+  easy: { base: 0.015, step: 0.004, max: 0.06 },
+  medium: { base: 0.04, step: 0.012, max: 0.16 },
+  hard: { base: 0.08, step: 0.024, max: 0.34 },
+  hardcore: { base: 0.14, step: 0.042, max: 0.58 },
+};
 const LIVE_WIN_INTERVAL_MS = 3200;
 const LIVE_WIN_VISIBLE_MS = 2200;
 const MAX_RENDER_RESOLUTION = 3;
@@ -184,12 +232,6 @@ const DIFFICULTY_LABELS: Record<Difficulty, string> = {
   hard: 'Hard',
   hardcore: 'Hardcore',
 };
-const DIFFICULTY_CHANCES: Record<Difficulty, { base: number; step: number; max: number }> = {
-  easy: { base: 0.015, step: 0.004, max: 0.06 },
-  medium: { base: 0.04, step: 0.012, max: 0.16 },
-  hard: { base: 0.08, step: 0.024, max: 0.34 },
-  hardcore: { base: 0.14, step: 0.042, max: 0.58 },
-};
 const DIFFICULTY_MULTIPLIERS: Record<Difficulty, { first: number; growth: number; curve: number }> = {
   easy: {
     first: GAME_SETTINGS.firstMultiplier,
@@ -203,10 +245,26 @@ const DIFFICULTY_MULTIPLIERS: Record<Difficulty, { first: number; growth: number
 const PRIZE_INDEX = GAME_SETTINGS.padCount - 1;
 const LEVEL_WIDTH = FIRST_PAD_X + PRIZE_INDEX * PAD_STEP + 360;
 
+type PadFlip = {
+  from: PadState;
+  to: PadState;
+  progress: number;
+};
+
 type PadView = {
   root: Container;
-  state: PadState;
+  shell: Container;
+  face: Container;
+  label: string;
+  visualState: PadState;
+  flip: PadFlip | null;
+  showingFlipFrom: boolean;
+  coverProgress: number;
 };
+
+const PAD_CHIP_BACK_SIZE = 224;
+const PAD_CHIP_MARKER_SIZE = 192;
+const PAD_FLIP_DURATION_FRAMES = 14;
 
 function gridFrames(columns: number, rows: number, width: number, height: number, count = columns * rows): FrameRect[] {
   const frames: FrameRect[] = [];
@@ -335,26 +393,40 @@ function panel(parent: Container, x: number, y: number, w: number, h: number, r:
   return g;
 }
 
-function drawTopBar(root: Container, viewWidth: number, balance: string): void {
+function drawTopBar(root: Container, viewWidth: number, balance: string, logo?: Texture): void {
   const bar = new Graphics();
   bar.rect(0, 0, viewWidth, TOP_H).fill(0x3a3e50);
   root.addChild(bar);
 
-  addText(root, 'CHICKEN R', 28, 24, 40, 0xffffff, 0, 0.5, '900');
-  const coin = new Graphics();
-  coin.circle(270, 23, 17).fill(0xffd549).stroke({ width: 4, color: 0xf0b31d });
-  coin.ellipse(264, 15, 8, 12).fill({ color: 0xffff9a, alpha: 0.75 });
-  root.addChild(coin);
-  addText(root, 'AD', 286, 24, 40, 0xffffff, 0, 0.5, '900');
-
-  const menuX = viewWidth - 29;
-  const expandX = viewWidth - 78;
   const balanceW = Math.min(192, Math.max(138, viewWidth * 0.15));
-  const balanceX = expandX - balanceW - 18;
+  const balanceX = viewWidth - balanceW - 16;
   const helpW = 160;
   const helpX = balanceX - helpW - 18;
   const showHelp = viewWidth >= 980;
   const showBalance = viewWidth >= 660;
+  const logoX = viewWidth < 720 ? SIDE_W - 24 : SIDE_W + 8;
+
+  if (logo) {
+    const logoSprite = new Sprite(logo);
+    logoSprite.anchor.set(0, 0.5);
+    const logoRightLimit = showHelp
+      ? helpX - 20
+      : showBalance
+        ? balanceX - 24
+        : viewWidth - 12;
+    const availableWidth = Math.max(160, logoRightLimit - logoX);
+    const scale = Math.min(availableWidth / logo.width, LOGO_DISPLAY_HEIGHT / logo.height);
+    logoSprite.scale.set(scale);
+    logoSprite.position.set(logoX, TOP_H / 2 + 22);
+    root.addChild(logoSprite);
+  } else {
+    addText(root, 'CHICKEN R', 28, 24, 40, 0xffffff, 0, 0.5, '900');
+    const coin = new Graphics();
+    coin.circle(270, 23, 17).fill(0xffd549).stroke({ width: 4, color: 0xf0b31d });
+    coin.ellipse(264, 15, 8, 12).fill({ color: 0xffff9a, alpha: 0.75 });
+    root.addChild(coin);
+    addText(root, 'AD', 286, 24, 40, 0xffffff, 0, 0.5, '900');
+  }
 
   if (showHelp) panel(root, helpX, 5, helpW, 35, 6, 0x555a70, 0x555a70, 0.88);
   const info = new Graphics();
@@ -374,17 +446,6 @@ function drawTopBar(root: Container, viewWidth: number, balance: string): void {
     root.addChild(smallCoin);
     addText(root, '$', balanceX + balanceW - 30, 22, 14, 0x535a6d, 0.5, 0.5, '900');
   }
-
-  panel(root, expandX - 17, 5, 34, 35, 6, 0x555a70, 0x555a70, 0.88);
-  const expand = new Graphics();
-  expand.moveTo(expandX - 10, 18).lineTo(expandX - 10, 13).lineTo(expandX - 5, 13).moveTo(expandX + 11, 13).lineTo(expandX + 16, 13).lineTo(expandX + 16, 18);
-  expand.moveTo(expandX - 10, 27).lineTo(expandX - 10, 32).lineTo(expandX - 5, 32).moveTo(expandX + 11, 32).lineTo(expandX + 16, 32).lineTo(expandX + 16, 27);
-  expand.stroke({ width: 2, color: 0xffffff });
-  root.addChild(expand);
-
-  const menu = new Graphics();
-  for (let i = 0; i < 3; i++) menu.roundRect(menuX - 9, 15 + i * 7, 18, 2.5, 1.2).fill(0xffffff);
-  root.addChild(menu);
 }
 
 function drawLivePanel(root: Container): void {
@@ -398,25 +459,25 @@ function drawLivePanel(root: Container): void {
   root.addChild(door);
 }
 
-function drawLiveWinsOverlay(root: Container, liveWin: LiveWin, onlineCount: number): void {
-  const backing = new Graphics();
-  backing.rect(0, TOP_H, SIDE_W, 86).fill({ color: 0x2f354f, alpha: 0.97 });
-  root.addChild(backing);
-
-  addText(root, 'Live wins:', 12, 64, 13, 0xbfc6e4, 0, 0.5, '800');
+function drawLiveSidebarHeader(root: Container, onlineCount: number): void {
+  const headerY = TOP_H + 14;
+  addText(root, 'Live wins:', 12, headerY, 13, 0xbfc6e4, 0, 0.5, '800');
   const dot = new Graphics();
-  dot.circle(97, 64, 3.5).fill(0x35e34c);
+  dot.circle(97, headerY, 3.5).fill(0x35e34c);
   root.addChild(dot);
-  addText(root, 'Online:', 114, 64, 13, 0xbfc6e4, 0, 0.5, '800');
-  addText(root, String(onlineCount), 169, 64, 13, 0xbfc6e4, 0, 0.5, '800');
+  addText(root, 'Online:', 114, headerY, 13, 0xbfc6e4, 0, 0.5, '800');
+  addText(root, String(onlineCount), 169, headerY, 13, 0xbfc6e4, 0, 0.5, '800');
+}
 
+function drawLiveWinToast(root: Container, liveWin: LiveWin): void {
+  const rowY = TOP_H + 34;
   const row = new Graphics();
-  row.roundRect(10, 84, 210, 30, 6).fill({ color: 0x3c466c, alpha: 0.58 });
-  row.circle(22, 99, 9).fill(liveWin.avatar);
-  row.circle(22, 105, 4).fill(0x3457d1);
+  row.roundRect(10, rowY, 210, 30, 6).fill(0x3c466c);
+  row.circle(22, rowY + 15, 9).fill(liveWin.avatar);
+  row.circle(22, rowY + 21, 4).fill(0x3457d1);
   root.addChild(row);
-  addText(root, liveWin.name, 39, 99, 13, 0xffffff, 0, 0.5, '800');
-  addText(root, `+$${formatUsd(liveWin.amount)}`, 145, 99, 13, 0x35ff72, 0, 0.5, '900');
+  addText(root, liveWin.name, 39, rowY + 15, 13, 0xffffff, 0, 0.5, '800');
+  addText(root, `+$${formatUsd(liveWin.amount)}`, 145, rowY + 15, 13, 0x35ff72, 0, 0.5, '900');
 }
 
 function drawStage(root: Container): void {
@@ -459,6 +520,24 @@ function drawFloor(root: Container, liftY = 0): void {
   root.addChild(floor);
 }
 
+function drawVentPlate(parent: Container, x: number, padPressed: boolean, liftY = 0, decors?: DecorSprites): void {
+  const floorY = FLOOR_Y - liftY;
+  const ventY = FLOOR_Y - 27 - liftY;
+
+  if (decors) {
+    const pad = new Sprite(decors.pad);
+    pad.anchor.set(0.5, 1);
+    pad.position.set(x, padPressed ? floorY + 31 : floorY + 4);
+    pad.scale.set(164 / pad.texture.width);
+    parent.addChild(pad);
+    return;
+  }
+
+  const plate = new Graphics();
+  plate.roundRect(x - 96, padPressed ? floorY + 15 : ventY + 32, 192, 17, 7).fill(0x697397);
+  parent.addChild(plate);
+}
+
 function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites, padPressed = false, liftY = 0): void {
   const floorY = FLOOR_Y - liftY;
   const ventY = y - liftY;
@@ -469,11 +548,7 @@ function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites
     sprite.scale.set(168 / sprite.texture.height);
     parent.addChild(sprite);
 
-    const pad = new Sprite(decors.pad);
-    pad.anchor.set(0.5, 1);
-    pad.position.set(x, padPressed ? floorY + 31 : floorY + 4);
-    pad.scale.set(164 / pad.texture.width);
-    parent.addChild(pad);
+    drawVentPlate(parent, x, padPressed, liftY, decors);
     return;
   }
 
@@ -484,15 +559,17 @@ function drawVent(parent: Container, x: number, y: number, decors?: DecorSprites
     const barH = 48 + (4 - Math.abs(i)) * 9;
     vent.roundRect(x + i * 18 - 7, ventY + 20 - barH, 14, barH, 7).fill(0x151a2f);
   }
-  vent.roundRect(x - 96, padPressed ? floorY + 15 : ventY + 32, 192, 17, 7).fill(0x697397);
-  parent.addChild(vent);
+  drawVentPlate(parent, x, padPressed, liftY);
 }
 
-function addMarkerSprite(parent: Container, texture: Texture, targetSize: number, y = 0): Sprite {
+function addMarkerSprite(parent: Container, texture: Texture, targetSize: number, y = 0, fit: 'max' | 'height' = 'max'): Sprite {
   const sprite = new Sprite(texture);
   sprite.anchor.set(0.5);
   sprite.position.set(0, y);
-  sprite.scale.set(targetSize / Math.max(texture.width, texture.height));
+  const scale = fit === 'height'
+    ? targetSize / texture.height
+    : targetSize / Math.max(texture.width, texture.height);
+  sprite.scale.set(scale);
   parent.addChild(sprite);
   return sprite;
 }
@@ -524,7 +601,13 @@ function drawPrizeDisplay(parent: Container, label: string, objectSprites: Objec
 }
 
 function drawSpritePad(parent: Container, label: string, state: PadState, sprites: ObjectSprites, decors?: DecorSprites): boolean {
-  addMarkerSprite(parent, sprites.padBack, 224, 12);
+  if (state === 'back') {
+    parent.removeChildren();
+    addMarkerSprite(parent, sprites.padBack, PAD_CHIP_BACK_SIZE, 0, 'height');
+    return true;
+  }
+
+  addMarkerSprite(parent, sprites.padBack, PAD_CHIP_BACK_SIZE, 0, 'height');
 
   if (state === 'prize') {
     parent.removeChildren();
@@ -533,23 +616,33 @@ function drawSpritePad(parent: Container, label: string, state: PadState, sprite
   }
 
   if (state === 'dead' || state === 'passed') {
-    addMarkerSprite(parent, sprites.padPassed, 190, 0);
+    addMarkerSprite(parent, sprites.padPassed, PAD_CHIP_MARKER_SIZE, 0, 'height');
     return true;
   }
 
   if (state === 'burned') {
-    addMarkerSprite(parent, sprites.padBurned, 192, 0);
+    addMarkerSprite(parent, sprites.padBurned, PAD_CHIP_MARKER_SIZE, 0, 'height');
     return true;
   }
 
   const marker = state === 'active' ? sprites.padActive : sprites.padIdle;
-  addMarkerSprite(parent, marker, 192, 0);
-  addText(parent, label, 0, 6, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
+  addMarkerSprite(parent, marker, PAD_CHIP_MARKER_SIZE, 0, 'height');
+  addText(parent, label, 0, 0, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
   return true;
 }
 
 function drawPad(parent: Container, label: string, state: PadState, sprites?: ObjectSprites, decors?: DecorSprites): void {
   parent.removeChildren();
+  if (state === 'back') {
+    if (sprites && drawSpritePad(parent, label, state, sprites, decors)) return;
+    const g = new Graphics();
+    g.circle(0, 11, 98).fill({ color: 0x1d243e, alpha: 0.45 });
+    g.circle(0, 0, 91).fill(0x2d3454);
+    g.circle(0, 0, 80).fill(0x596596).stroke({ width: 10, color: 0x7480c4 });
+    parent.addChild(g);
+    return;
+  }
+
   if (sprites && drawSpritePad(parent, label, state, sprites, decors)) return;
 
   const color = state === 'active' || state === 'passed' ? 0x25b94a : state === 'dead' || state === 'prize' ? 0xf3c62d : state === 'burned' ? 0xd12f68 : 0x596596;
@@ -583,14 +676,18 @@ function drawPad(parent: Container, label: string, state: PadState, sprites?: Ob
     return;
   }
 
-  addText(parent, label, 0, 6, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
+  addText(parent, label, 0, 0, 47, 0xe9edff, 0.5, 0.5, '900', 0x2a3259, 5);
 }
 
 function makePad(label: string, x: number, state: PadState, sprites?: ObjectSprites, decors?: DecorSprites): PadView {
   const root = new Container();
   root.position.set(x, PAD_Y);
-  drawPad(root, label, state, sprites, decors);
-  return { root, state };
+  const shell = new Container();
+  const face = new Container();
+  root.addChild(shell);
+  shell.addChild(face);
+  drawPad(face, label, state, sprites, decors);
+  return { root, shell, face, label, visualState: state, flip: null, showingFlipFrom: true, coverProgress: 0 };
 }
 
 function makeSpriteFrames(sheet: Texture, frames: FrameRect[]): Texture[] {
@@ -753,9 +850,16 @@ function updateFireAnimation(view: FireView, time: number): void {
   view.sprite.y = view.locked ? view.baseY : view.baseY + Math.sin(pulseTime * 5) * view.targetHeight * 0.025;
 }
 
-function createMiniFireSlots(): (MiniFireSlot | undefined)[] {
-  return Array.from({ length: PRIZE_INDEX }, () => {
-    if (Math.random() >= MINI_FIRE_CHANCE) return undefined;
+function roastChance(index: number, difficulty: Difficulty): number {
+  const config = DIFFICULTY_ROAST_CHANCES[difficulty];
+  return Math.min(config.base + Math.max(0, index - 1) * config.step, config.max);
+}
+
+function createMiniFireSlots(difficulty: Difficulty): (MiniFireSlot | undefined)[] {
+  const firePadChance = DIFFICULTY_FIRE_PAD_CHANCES[difficulty];
+  return Array.from({ length: PRIZE_INDEX }, (_, index) => {
+    if (index === 0) return undefined;
+    if (Math.random() >= firePadChance) return undefined;
     return {
       height: 78 + Math.random() * 34,
       xOffset: -12 + Math.random() * 24,
@@ -1060,23 +1164,115 @@ function drawControls(root: Container, state: GameState, cashout: string, diffic
   drawWideControls(root, state, cashout, difficulty, stake, cardX, cardY, cardWidth, onGo, onAutoRun, onCashOut, onDifficulty, onStake);
 }
 
-function drawRoundMessage(root: Container, viewWidth: number, message: RoundMessage): void {
-  const x = viewWidth / 2;
-  panel(root, x - 250, 170, 500, 140, 22, 0xffc21b, 0x9f7412, 0.98);
-  addText(root, message.title, x, 224, 48, 0x111829, 0.5, 0.5, '900');
-  addText(root, `${formatUsd(message.total)} USD`, x, 272, 34, 0x111829, 0.5, 0.5, '900');
-}
-
 async function boot() {
+  const gameHostNode = document.querySelector('#chicken-road');
+  if (!(gameHostNode instanceof HTMLElement)) throw new Error('Missing #chicken-road host');
+  const gameHost = gameHostNode;
+
+  const stageHost = document.createElement('div');
+  stageHost.className = 'chicken-road-stage';
+  const finalWinSlot = document.createElement('div');
+  finalWinSlot.className = 'final-win-slot';
+  gameHost.appendChild(stageHost);
+  gameHost.appendChild(finalWinSlot);
+
   const app = new Application();
   await app.init({
-    resizeTo: window,
     background: '#111421',
     antialias: true,
     resolution: Math.min(window.devicePixelRatio || 1, MAX_RENDER_RESOLUTION),
     autoDensity: true,
+    width: Math.max(1, gameHost.clientWidth || window.innerWidth),
+    height: Math.max(1, gameHost.clientHeight || window.innerHeight),
   });
-  document.body.appendChild(app.canvas);
+  stageHost.appendChild(app.canvas);
+
+  let gameVisible = true;
+  let previewWinOpen = false;
+  let finalWinVisible = false;
+  let finalWinPrize = 0;
+
+  function setCanvasInteractive(enabled: boolean) {
+    app.canvas.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+
+  function clearFinalWinOverlay() {
+    finalWinSlot.innerHTML = '';
+    finalWinSlot.style.pointerEvents = 'none';
+    finalWinVisible = false;
+    setCanvasInteractive(true);
+  }
+
+  function dismissFinalWinOverlay() {
+    if (!finalWinVisible) return;
+    previewWinOpen = false;
+    clearFinalWinOverlay();
+    resetAtStart();
+  }
+
+  function renderFinalWinOverlay(prize: number) {
+    finalWinPrize = prize;
+    finalWinVisible = true;
+    finalWinSlot.style.pointerEvents = 'auto';
+    setCanvasInteractive(false);
+    finalWinSlot.innerHTML = `
+      <section class="final-win-overlay" aria-label="Win install prompt">
+        <div class="final-win-card">
+          <p class="final-win-kicker">Win!</p>
+          <p class="final-win-amount">$${formatUsd(prize)}</p>
+          <div class="final-win-actions">
+            <button type="button" class="final-win-install">Install</button>
+            <button type="button" class="final-win-market">Download from Play Market</button>
+          </div>
+        </div>
+      </section>
+    `;
+
+    finalWinSlot.querySelector('.final-win-install')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      notifyObservers(installObservers, event as MouseEvent);
+    });
+    finalWinSlot.querySelector('.final-win-market')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      notifyObservers(playMarketObservers, event as MouseEvent);
+    });
+  }
+
+  function showFinalWinScreen(prize = 42.12) {
+    if (!gameVisible) showGame();
+    previewWinOpen = true;
+    autoRun = false;
+    autoAdvanceAt = 0;
+    gameState = 'won';
+    renderFinalWinOverlay(Number(prize.toFixed(2)));
+    render();
+  }
+
+  function hideFinalWinScreen() {
+    if (!previewWinOpen) return;
+    dismissFinalWinOverlay();
+  }
+
+  function showGame() {
+    gameHost.hidden = false;
+    gameVisible = true;
+    previewWinOpen = false;
+    app.ticker.start();
+    clearFinalWinOverlay();
+    resetAtStart();
+    relayout();
+  }
+
+  function hideGame() {
+    gameVisible = false;
+    previewWinOpen = false;
+    autoRun = false;
+    autoAdvanceAt = 0;
+    clearFinalWinOverlay();
+    resetAtStart();
+    app.ticker.stop();
+    gameHost.hidden = true;
+  }
 
   const worldLayer = new Container();
   const uiLayer = new Container();
@@ -1100,14 +1296,12 @@ async function boot() {
   let burnedAt = 0;
   let autoRun = false;
   let autoAdvanceAt = 0;
-  let roundMessageAt = 0;
-  let roundMessage: RoundMessage | undefined;
   let landingResolved = true;
   let movementSprite: ChickenMoveState = 'go';
   let burnFlame: FireView | undefined;
   let fallbackFlame: Container | undefined;
   let miniFires: FireView[] = [];
-  let miniFireSlots = createMiniFireSlots();
+  let miniFireSlots = createMiniFireSlots(difficulty);
   let liveWinIndex = 0;
   let liveWin = LIVE_WIN_MOCKS[liveWinIndex];
   let liveOnlineCount = 3171;
@@ -1116,14 +1310,16 @@ async function boot() {
   let liveWinVisibleUntil = initialNow + LIVE_WIN_VISIBLE_MS;
   let nextLiveWinAt = initialNow + LIVE_WIN_INTERVAL_MS;
   let pads: PadView[] = [];
+  const padsLayer = new Container();
   let layoutInfo: LayoutInfo = { scale: 1, viewWidth: DESIGN_WIDTH, worldViewWidth: DESIGN_WIDTH, worldScale: 1, screenWidth: DESIGN_WIDTH, screenHeight: DESIGN_HEIGHT, groundLiftY: 0 };
   let cameraX = 0;
   let targetCameraX = 0;
-  const [chickenFrames, objectSprites, decorSprites, fireSprites] = await Promise.all([
+  const [chickenFrames, objectSprites, decorSprites, fireSprites, logoTexture] = await Promise.all([
     loadChickenFrames(),
     loadObjectSprites(),
     loadDecorSprites(),
     loadFireSprites(),
+    Assets.load<Texture>(LOGO_URL).catch(() => undefined),
   ]);
   const chicken = makeChicken(chickenFrames);
 
@@ -1186,10 +1382,10 @@ async function boot() {
   }
 
   function viewportSize() {
-    const viewport = window.visualViewport;
+    const rect = gameHost.getBoundingClientRect();
     return {
-      width: Math.max(1, Math.round(viewport?.width ?? window.innerWidth)),
-      height: Math.max(1, Math.round(viewport?.height ?? window.innerHeight)),
+      width: Math.max(1, Math.round(rect.width)),
+      height: Math.max(1, Math.round(rect.height)),
     };
   }
 
@@ -1199,6 +1395,164 @@ async function boot() {
     app.canvas.style.height = `${height}px`;
     if (app.screen.width !== width || app.screen.height !== height) {
       app.renderer.resize(width, height);
+    }
+  }
+
+  function padShowsMiniFire(index: number): boolean {
+    if (!miniFireSlots[index]) return false;
+    if (gameState === 'ready') return true;
+    if (gameState !== 'running') return false;
+    if (index > activeIndex) return true;
+    return index === activeIndex && moveProgress < 1;
+  }
+
+  function chickenPadIndex(): number | null {
+    if (activeIndex < 0) return null;
+    if (gameState !== 'running' && gameState !== 'won' && gameState !== 'burned') return null;
+    if (gameState === 'running' && moveProgress < 1) return null;
+    return activeIndex;
+  }
+
+  function updatePadCover(deltaTime: number) {
+    const hiddenIndex = chickenPadIndex();
+    const step = deltaTime / PAD_FLIP_DURATION_FRAMES;
+
+    for (let i = 0; i < pads.length; i++) {
+      const pad = pads[i];
+      const targetCover = hiddenIndex === i ? 1 : 0;
+      const previousCover = pad.coverProgress;
+
+      if (pad.coverProgress < targetCover) {
+        pad.coverProgress = Math.min(targetCover, pad.coverProgress + step);
+      } else if (pad.coverProgress > targetCover) {
+        pad.coverProgress = Math.max(targetCover, pad.coverProgress - step);
+      }
+
+      if (previousCover >= 0.999 && pad.coverProgress < 0.999 && targetCover === 0 && !pad.flip) {
+        pad.face.scale.x = 1;
+        const target = computePadTargetState(i);
+        drawPad(pad.face, pad.label, target === 'passed' ? 'back' : pad.visualState, objectSprites, decorSprites);
+      }
+
+      pad.shell.scale.x = Math.max(0.001, Math.cos(pad.coverProgress * Math.PI * 0.5));
+    }
+  }
+
+  function padFlipFromState(pad: PadView, target: PadState): PadState {
+    if (target === 'passed') return 'back';
+    return pad.visualState;
+  }
+
+  function computePadTargetState(index: number): PadState {
+    if (index === PRIZE_INDEX && gameState !== 'burned') return 'prize';
+    if (gameState === 'burned' && index === activeIndex) return 'burned';
+    if (gameState === 'burned' && index === 0) return 'dead';
+    if (gameState === 'ready') return 'idle';
+
+    if (moveProgress < 1) {
+      if (index < activeIndex) return 'passed';
+      return 'idle';
+    }
+
+    if (index < activeIndex) return 'passed';
+    if (index === activeIndex) return 'active';
+    return 'idle';
+  }
+
+  function ensurePads() {
+    if (pads.length === GAME_SETTINGS.padCount) return;
+
+    padsLayer.removeChildren();
+    pads = [];
+    for (let i = 0; i < GAME_SETTINGS.padCount; i++) {
+      const padWorldX = FIRST_PAD_X + i * PAD_STEP;
+      const initialState: PadState = i === PRIZE_INDEX ? 'prize' : 'idle';
+      const pad = makePad(
+        multiplierLabelForIndex(i, difficulty),
+        padWorldX,
+        initialState,
+        objectSprites,
+        decorSprites,
+      );
+      pad.visualState = initialState;
+      pads.push(pad);
+      padsLayer.addChild(pad.root);
+    }
+  }
+
+  function syncPadStates() {
+    ensurePads();
+
+    for (let i = 0; i < pads.length; i++) {
+      const pad = pads[i];
+      const label = multiplierLabelForIndex(i, difficulty);
+      const target = computePadTargetState(i);
+
+      pad.root.position.set(FIRST_PAD_X + i * PAD_STEP, PAD_Y - layoutInfo.groundLiftY);
+
+      if (pad.label !== label) {
+        pad.label = label;
+        if (!pad.flip) {
+          drawPad(pad.face, label, pad.visualState, objectSprites, decorSprites);
+        }
+      }
+
+      if (pad.flip) continue;
+      if (target === pad.visualState) continue;
+
+      if (chickenPadIndex() === i) {
+        if (target !== pad.visualState) {
+          pad.visualState = target;
+        }
+        continue;
+      }
+
+      pad.flip = { from: padFlipFromState(pad, target), to: target, progress: 0 };
+      pad.showingFlipFrom = true;
+      pad.face.scale.x = 1;
+      drawPad(pad.face, label, pad.flip.from, objectSprites, decorSprites);
+    }
+  }
+
+  function resetPadVisuals() {
+    ensurePads();
+    for (let i = 0; i < pads.length; i++) {
+      const pad = pads[i];
+      const label = multiplierLabelForIndex(i, difficulty);
+      const target = computePadTargetState(i);
+      pad.label = label;
+      pad.flip = null;
+      pad.showingFlipFrom = true;
+      pad.visualState = target;
+      pad.face.scale.x = 1;
+      pad.coverProgress = 0;
+      pad.shell.scale.x = 1;
+      pad.root.scale.set(1);
+      drawPad(pad.face, label, target, objectSprites, decorSprites);
+    }
+  }
+
+  function updatePadFlips(deltaTime: number) {
+    for (const pad of pads) {
+      if (!pad.flip) continue;
+
+      const flip = pad.flip;
+      flip.progress = Math.min(1, flip.progress + deltaTime / PAD_FLIP_DURATION_FRAMES);
+      const showFrom = flip.progress < 0.5;
+
+      if (showFrom !== pad.showingFlipFrom) {
+        pad.showingFlipFrom = showFrom;
+        drawPad(pad.face, pad.label, showFrom ? flip.from : flip.to, objectSprites, decorSprites);
+      }
+
+      pad.face.scale.x = Math.max(0.001, Math.abs(Math.cos(flip.progress * Math.PI)));
+
+      if (flip.progress >= 1) {
+        pad.visualState = flip.to;
+        pad.flip = null;
+        pad.face.scale.x = 1;
+        drawPad(pad.face, pad.label, flip.to, objectSprites, decorSprites);
+      }
     }
   }
 
@@ -1228,38 +1582,26 @@ async function boot() {
   function render() {
     worldLayer.removeChildren();
     uiLayer.removeChildren();
-    pads = [];
     miniFires = [];
     burnFlame = undefined;
     fallbackFlame = undefined;
     updateBalanceFromBank();
 
-    drawTopBar(uiLayer, layoutInfo.viewWidth, balance);
+    drawTopBar(uiLayer, layoutInfo.viewWidth, balance, logoTexture);
     drawLivePanel(worldLayer);
-    if (liveWinVisible) drawLiveWinsOverlay(uiLayer, liveWin, liveOnlineCount);
+    drawLiveSidebarHeader(uiLayer, liveOnlineCount);
+    if (liveWinVisible) drawLiveWinToast(uiLayer, liveWin);
     drawStage(worldLayer);
 
-    for (let i = 0; i < GAME_SETTINGS.padCount; i++) {
-      const padWorldX = FIRST_PAD_X + i * PAD_STEP;
-      let state: PadState = 'idle';
-      if (i === PRIZE_INDEX && gameState !== 'burned') state = 'prize';
-      else if (gameState === 'burned' && i === activeIndex) state = 'burned';
-      else if (i < activeIndex) state = 'passed';
-      else if (i === activeIndex) state = 'active';
-      if (gameState === 'burned' && i === 0) state = 'dead';
-
-      const pad = makePad(multiplierLabelForIndex(i, difficulty), padWorldX, state, objectSprites, decorSprites);
-      pad.root.y -= layoutInfo.groundLiftY;
-      pads.push(pad);
-      worldLayer.addChild(pad.root);
-    }
+    syncPadStates();
+    worldLayer.addChild(padsLayer);
 
     for (let i = 0; i < PRIZE_INDEX; i++) {
       const padWorldX = FIRST_PAD_X + i * PAD_STEP;
       const padPressed = gameState !== 'ready' && (i < activeIndex || (i === activeIndex && moveProgress >= 1));
       drawVent(worldLayer, padWorldX, FLOOR_Y - 27, decorSprites, padPressed, layoutInfo.groundLiftY);
       const miniFireSlot = miniFireSlots[i];
-      if (fireSprites && miniFireSlot && i > activeIndex) {
+      if (fireSprites && miniFireSlot && padShowsMiniFire(i)) {
         miniFires.push(drawMiniFire(
           worldLayer,
           fireSprites.mini,
@@ -1271,11 +1613,6 @@ async function boot() {
     }
     drawFloor(worldLayer, layoutInfo.groundLiftY);
 
-    chicken.position.set(chickenX, displayGroundY(chickenY));
-    chicken.scale.set(0.95);
-    updateChickenFrame(chicken, currentChickenState(), performance.now() / 1000);
-    worldLayer.addChild(chicken);
-
     if (gameState === 'burned') {
       const x = FIRST_PAD_X + activeIndex * PAD_STEP;
       if (fireSprites) {
@@ -1283,10 +1620,15 @@ async function boot() {
       } else {
         fallbackFlame = drawFallbackFlame(worldLayer, x, displayGroundY(FLOOR_Y - 121), 1.65);
       }
+      drawVentPlate(worldLayer, x, true, layoutInfo.groundLiftY, decorSprites);
     }
 
-    drawControls(uiLayer, roundMessage ? 'won' : gameState, cashout, difficulty, stakeAmount, layoutInfo.viewWidth, layoutInfo.screenWidth, layoutInfo.screenHeight, advance, startAutoRun, cashOut, setDifficulty, setStake);
-    if (roundMessage) drawRoundMessage(uiLayer, layoutInfo.viewWidth, roundMessage);
+    chicken.position.set(chickenX, displayGroundY(chickenY));
+    chicken.scale.set(0.95);
+    updateChickenFrame(chicken, currentChickenState(), performance.now() / 1000);
+    worldLayer.addChild(chicken);
+
+    drawControls(uiLayer, gameState, cashout, difficulty, stakeAmount, layoutInfo.viewWidth, layoutInfo.screenWidth, layoutInfo.screenHeight, advance, startAutoRun, cashOut, setDifficulty, setStake);
     updateCameraTarget();
     applyCamera();
   }
@@ -1294,8 +1636,6 @@ async function boot() {
   function resetAtStart() {
     gameState = 'ready';
     activeIndex = -1;
-    roundMessage = undefined;
-    roundMessageAt = 0;
     updateBalanceFromBank();
     updateCashout();
     chickenX = START_CHICKEN_X;
@@ -1308,33 +1648,26 @@ async function boot() {
     burnedAt = 0;
     autoRun = false;
     autoAdvanceAt = 0;
-    miniFireSlots = createMiniFireSlots();
+    miniFireSlots = createMiniFireSlots(difficulty);
     landingResolved = true;
     movementSprite = 'go';
     chicken.rotation = 0;
     targetCameraX = 0;
+    resetPadVisuals();
     render();
   }
 
-  function roastChance(index: number) {
-    const config = DIFFICULTY_CHANCES[difficulty];
-    return Math.min(config.base + Math.max(0, index - 1) * config.step, config.max);
-  }
-
-  function settleRound(title: string, nextBankValue: number) {
+  function settleRound(_title: string, nextBankValue: number) {
     autoRun = false;
     autoAdvanceAt = 0;
     bankedWinnings = nextBankValue;
     saveBankedWinnings(bankedWinnings);
     updateBalanceFromBank();
     cashout = formatUsd(bankedWinnings);
-    roundMessage = {
-      title,
-      total: bankedWinnings,
-    };
-    roundMessageAt = performance.now();
     gameState = 'won';
+    previewWinOpen = false;
     audio.play('win');
+    renderFinalWinOverlay(nextBankValue);
     render();
   }
 
@@ -1347,7 +1680,7 @@ async function boot() {
       return;
     }
 
-    if (activeIndex > 0 && Math.random() < roastChance(activeIndex)) {
+    if (activeIndex > 0 && Math.random() < roastChance(activeIndex, difficulty)) {
       gameState = 'burned';
       burnedAt = performance.now();
       autoRun = false;
@@ -1362,7 +1695,7 @@ async function boot() {
   }
 
   function startRun(isAutoRun = false) {
-    if (roundMessage) return;
+    if (gameState === 'won' || finalWinVisible) return;
     gameState = 'running';
     autoRun = isAutoRun;
     autoAdvanceAt = 0;
@@ -1374,7 +1707,6 @@ async function boot() {
     targetY = RUN_CHICKEN_Y;
     moveProgress = 0;
     burnedAt = 0;
-    roundMessageAt = 0;
     landingResolved = false;
     movementSprite = 'go';
     audio.play('step');
@@ -1389,20 +1721,20 @@ async function boot() {
   }
 
   function cashOut() {
-    if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || roundMessage) return;
+    if (gameState !== 'running' || moveProgress < 1 || activeIndex < 0 || finalWinVisible) return;
     autoRun = false;
     autoAdvanceAt = 0;
     settleRound('WIN!', roundCashoutValue());
   }
 
   function advance() {
-    if (roundMessage) return;
+    if (gameState === 'won' || finalWinVisible) return;
     if (gameState === 'ready') {
       startRun();
       return;
     }
 
-    if (gameState === 'burned' || gameState === 'won' || moveProgress < 1) return;
+    if (gameState === 'burned' || moveProgress < 1) return;
     if (activeIndex >= PRIZE_INDEX) return;
 
     autoAdvanceAt = 0;
@@ -1422,6 +1754,7 @@ async function boot() {
   function setDifficulty(nextDifficulty: Difficulty) {
     if (difficulty === nextDifficulty || gameState !== 'ready') return;
     difficulty = nextDifficulty;
+    miniFireSlots = createMiniFireSlots(difficulty);
     audio.play('click');
     updateCashout();
     render();
@@ -1446,6 +1779,8 @@ async function boot() {
   });
 
   app.ticker.add((ticker) => {
+    if (!gameVisible) return;
+
     const now = performance.now();
     const t = now / 1000;
 
@@ -1463,7 +1798,8 @@ async function boot() {
     }
 
     if (moveProgress < 1) {
-      moveProgress = Math.min(1, moveProgress + ticker.deltaTime * MOVE_SPEED);
+      const moveSpeed = autoRun ? MOVE_SPEED * 2 : MOVE_SPEED;
+      moveProgress = Math.min(1, moveProgress + ticker.deltaTime * moveSpeed);
       const eased = 1 - Math.pow(1 - moveProgress, 3);
       chickenX = moveStartX + (targetX - moveStartX) * eased;
       const baseY = moveStartY + (targetY - moveStartY) * eased;
@@ -1476,7 +1812,7 @@ async function boot() {
       }
       chicken.position.set(chickenX, displayGroundY(chickenY));
       updateChickenFrame(chicken, movementSprite, t);
-      if (moveProgress === 1) {
+      if (moveProgress >= 1) {
         chickenY = targetY;
         chicken.position.set(chickenX, displayGroundY(chickenY));
         chicken.rotation = 0;
@@ -1494,8 +1830,13 @@ async function boot() {
     cameraX += (targetCameraX - cameraX) * Math.min(1, ticker.deltaTime * 0.12);
     applyCamera();
 
+    updatePadFlips(ticker.deltaTime);
+    updatePadCover(ticker.deltaTime);
+
     for (const pad of pads) {
-      if (pad.state === 'active' || pad.state === 'burned') pad.root.scale.set(1 + Math.sin(t * 4) * 0.015);
+      const pulseState = pad.flip ? pad.flip.to : pad.visualState;
+      const isCovered = pad.coverProgress > 0.85;
+      if (!isCovered && (pulseState === 'active' || pulseState === 'burned')) pad.root.scale.set(1 + Math.sin(t * 4) * 0.015);
       else pad.root.scale.set(1);
     }
 
@@ -1513,10 +1854,6 @@ async function boot() {
     }
 
     if (gameState === 'burned' && burnedAt > 0 && performance.now() - burnedAt >= REVIVE_DELAY_MS) {
-      resetAtStart();
-    }
-
-    if (roundMessageAt > 0 && performance.now() - roundMessageAt >= ROUND_MESSAGE_DELAY_MS) {
       resetAtStart();
     }
   });
@@ -1537,14 +1874,22 @@ async function boot() {
   }
 
   const resizeObserver = new ResizeObserver(scheduleResize);
-  resizeObserver.observe(document.documentElement);
-  resizeObserver.observe(document.body);
+  resizeObserver.observe(gameHost);
 
   window.addEventListener('resize', scheduleResize);
   window.addEventListener('orientationchange', scheduleResize);
   window.visualViewport?.addEventListener('resize', scheduleResize);
   updateCashout();
   relayout();
+
+  window.ChickenRoad = {
+    observeInstallButton: (callback) => subscribe(installObservers, callback),
+    observePlayMarketButton: (callback) => subscribe(playMarketObservers, callback),
+    showGame,
+    hideGame,
+    showFinalWinScreen,
+    hideFinalWinScreen,
+  };
 }
 
 boot();

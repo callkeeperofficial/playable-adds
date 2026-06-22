@@ -33,6 +33,6 @@
 ## Repository Integration
 
 - Decide whether the 609 MB of `.mov` references should be Git-ignored or stored externally before committing.
-- Register `penalty-cup` in the root Pages index and deployment workflow only when the playable is ready to publish.
+- `penalty-cup` is registered in the root Pages index and deployment workflow.
 - Build every playable and verify all published URLs before deployment, per the repository guide.
 

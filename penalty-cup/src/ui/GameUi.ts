@@ -1,6 +1,6 @@
-import { BETS, BONUS_CONFIG, DESIGN_HEIGHT, DESIGN_WIDTH, money, MULTIPLIERS } from '../game/config';
+import { BETS, BONUS_CONFIG, DESIGN_HEIGHT, DESIGN_WIDTH, money, MULTIPLIERS, MULTIPLIER_TRACK_WINDOW } from '../game/config';
 import { urls } from '../game/assets';
-import { GOALS_FOR_TIER_WIN, winTierConfig, type WinScreen } from '../game/winConfig';
+import { winTierConfig, type WinScreen } from '../game/winConfig';
 import type { Difficulty, GameState } from '../game/types';
 import { COUNTRIES, flagStyle } from './flags';
 
@@ -210,17 +210,11 @@ export class GameUi {
     return shots;
   }
 
-  showFinalWinScreen(amount: number, multiplier: number | undefined, onDismiss: () => void, screen = 4): void {
+  showFinalWinScreen(amount: number, multiplier: number | undefined, screen = 4): void {
     const layout = winTierConfig(screen as WinScreen);
     const multiplierMarkup = multiplier === undefined
       ? ''
       : `<div class="win-multiplier">${Math.round(multiplier * 100) / 100} X BET</div>`;
-    let dismissed = false;
-    const dismiss = (): void => {
-      if (dismissed) return;
-      dismissed = true;
-      onDismiss();
-    };
     this.modalLayer.innerHTML = `
       <section
         class="win-controls"
@@ -228,7 +222,6 @@ export class GameUi {
         data-win-screen="${screen}"
         style="--win-amount-top:${layout.amountTop}px;--win-cta-bottom:${layout.ctaBottom}px"
       >
-        <button type="button" class="win-dismiss" aria-label="Continue"></button>
         <div class="win-amount">${money(amount)}</div>
         ${multiplierMarkup}
         <div class="win-cta">
@@ -243,19 +236,12 @@ export class GameUi {
             </button>
           </div>
         </div>
-        <b>TAP OUTSIDE BUTTONS TO CONTINUE</b>
       </section>`;
     this.modalLayer.querySelector<HTMLButtonElement>('.win-cta-install')!.addEventListener('click', (event) => {
-      event.stopPropagation();
       this.callbacks.onInstallClick(event);
     });
     this.modalLayer.querySelector<HTMLButtonElement>('.win-cta-market')!.addEventListener('click', (event) => {
-      event.stopPropagation();
       this.callbacks.onPlayMarketClick(event);
-    });
-    this.modalLayer.querySelector('.win-controls')?.addEventListener('click', (event) => {
-      if ((event.target as HTMLElement).closest('.win-cta-install, .win-cta-market')) return;
-      dismiss();
     });
   }
 
@@ -269,16 +255,19 @@ export class GameUi {
 
   private renderMultiplier(difficulty: Difficulty, step: number): void {
     const values = MULTIPLIERS[difficulty];
-    const start = Math.max(1, Math.min(values.length - 6, step - 2));
+    const windowSize = MULTIPLIER_TRACK_WINDOW;
+    const maxStart = Math.max(1, values.length - windowSize);
+    const pageIndex = step <= 0 ? 0 : Math.floor((step - 1) / windowSize);
+    const start = Math.min(1 + pageIndex * windowSize, maxStart);
+    const filledInWindow = step <= 0 ? 0 : ((step - 1) % windowSize) + 1;
+    const progress = filledInWindow <= 1 ? 0 : (filledInWindow - 1) / (windowSize - 1);
     const key = `${difficulty}:${step}:${start}`;
     if (key === this.multiplierKey) return;
     this.multiplierKey = key;
-    const filledSlots = Math.min(Math.max(step, 0), GOALS_FOR_TIER_WIN);
-    const progress = filledSlots <= 1 ? 0 : (filledSlots - 1) / (GOALS_FOR_TIER_WIN - 1);
-    const steps = values.slice(start, start + 6).map((value, index) => {
+    const steps = values.slice(start, start + windowSize).map((value, index) => {
       const absoluteIndex = start + index;
       const active = absoluteIndex === step;
-      const complete = index < filledSlots;
+      const complete = index < filledInWindow;
       return `<span class="multiplier-step${active ? ' active' : ''}${complete ? ' complete' : ''}"><i aria-hidden="true"></i><b>x${value}</b></span>`;
     }).join('');
     this.multiplier.innerHTML = `<span class="multiplier-arrow" aria-hidden="true">‹</span><div class="multiplier-track" style="--progress:${progress * 100}%"><span class="multiplier-fill"></span>${steps}</div><span class="multiplier-arrow" aria-hidden="true">›</span>`;

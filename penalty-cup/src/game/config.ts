@@ -3,6 +3,7 @@ import type { Difficulty } from './types';
 export const DESIGN_WIDTH = 390;
 export const DESIGN_HEIGHT = 844;
 export const BETS = [10, 25, 50, 100, 200] as const;
+export const MULTIPLIER_TRACK_WINDOW = 6;
 
 export const MULTIPLIERS: Record<Difficulty, number[]> = {
   easy: [0, 1.31, 1.79, 2.43, 3.32, 4.53, 6.17, 8.42, 11.48, 15.65, 21.34, 29.1, 39.69, 54.12, 73.8, 100.64],

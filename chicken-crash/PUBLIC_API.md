@@ -1,5 +1,8 @@
 # Chicken Crash Public API
 
+Repository-wide rules for building this API live in
+[`../PUBLIC_API.md`](../PUBLIC_API.md).
+
 Chicken Crash exposes a small browser API for host pages that embed the
 playable. The API is available on `window.ChickenCrash` after the game script
 has loaded.

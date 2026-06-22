@@ -98,8 +98,7 @@ button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .roulette-result { margin-top: 12px; display: grid; opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; } .roulette-result.visible { opacity: 1; transform: translateY(0); }
 .roulette-result b { color: #ffd744; font-size: 56px; line-height: 60px; } .roulette-result span { font-weight: 900; }
 .game-ui[data-state='bonus_result'] > :not(.modal-layer) { visibility: hidden; }
-.win-controls { position: absolute; inset: 0; z-index: 30; text-align: center; text-shadow: 0 3px 8px #000; }
-.win-dismiss { position: absolute; inset: 0; z-index: 0; border: 0; background: transparent; cursor: pointer; }
+.win-controls { position: absolute; inset: 0; z-index: 30; text-align: center; text-shadow: 0 3px 8px #000; pointer-events: none; }
 .win-amount { position: absolute; z-index: 2; left: 59px; right: 59px; top: var(--win-amount-top, 651px); height: 64px; display: grid; place-items: center; border: 3px solid #3f7d27; border-radius: 8px; background: rgb(25 58 17 / 93%); box-shadow: inset 0 0 16px rgb(0 0 0 / 45%); font-size: 32px; font-weight: 900; pointer-events: none; }
 .win-multiplier { position: absolute; z-index: 3; left: 134px; right: 134px; top: calc(var(--win-amount-top, 651px) + 52px); height: 36px; display: grid; place-items: center; border: 2px solid #3f7d27; border-radius: 7px; background: #294916; color: #ffd52b; font-size: 14px; font-weight: 900; pointer-events: none; }
 .win-cta { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: var(--win-cta-bottom, 42px); pointer-events: none; transform: translateY(96px); opacity: 0; animation: win-cta-enter 0.65s cubic-bezier(.22,.95,.31,1) 0.9s forwards; }
@@ -112,7 +111,5 @@ button { border: 0; color: inherit; font: inherit; cursor: pointer; }
 .win-cta-install small { color: #b8e8a8; }
 .win-cta-market { min-height: 66px; border: 1px solid rgb(224 183 22 / 72%); border-bottom-left-radius: 28px; border-bottom-right-radius: 28px; background: linear-gradient(180deg, #f0bc28 0%, #e4aa17 55%, #c89212 100%); color: #2d211b; box-shadow: inset 0 1px 0 rgb(255 255 255 / 24%), inset 0 -3px 0 rgb(171 111 0 / 55%); }
 .win-cta-market small { color: rgb(45 33 27 / 78%); }
-.win-controls > b { position: absolute; z-index: 4; left: 0; right: 0; bottom: 18px; color: #aeb8ba; font-size: 11px; font-weight: 800; cursor: pointer; pointer-events: auto; opacity: 0; animation: win-continue-enter 0.35s ease 1.35s forwards; }
 @keyframes win-cta-enter { to { transform: translateY(0); opacity: 1; } }
-@keyframes win-continue-enter { to { opacity: 1; } }
 @keyframes wheel-spin { to { transform: rotate(var(--wheel-angle)); } }

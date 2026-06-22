@@ -8,11 +8,17 @@ body {
 }
 
 #chicken-road {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   background: #111421;
+}
+@supports (height: 100dvh) {
+  #chicken-road {
+    height: 100dvh;
+  }
 }
 
 #chicken-road .chicken-road-stage {

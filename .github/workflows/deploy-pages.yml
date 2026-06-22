@@ -32,6 +32,7 @@ jobs:
             chicken-crash/package-lock.json
             chicken-road-unfinished/package-lock.json
             chicken-pilot/package-lock.json
+            penalty-cup/package-lock.json
 
       - name: Install Chicken Road dependencies
         working-directory: chicken-road
@@ -65,13 +66,22 @@ jobs:
         working-directory: chicken-pilot
         run: npm run build
 
+      - name: Install Penalty Cup dependencies
+        working-directory: penalty-cup
+        run: npm ci
+
+      - name: Build Penalty Cup
+        working-directory: penalty-cup
+        run: npm run build
+
       - name: Assemble Pages bundle
         run: |
-          mkdir -p pages-bundle/chicken-road pages-bundle/chicken-crash pages-bundle/chicken-road-unfinished pages-bundle/chicken-pilot
+          mkdir -p pages-bundle/chicken-road pages-bundle/chicken-crash pages-bundle/chicken-road-unfinished pages-bundle/chicken-pilot pages-bundle/penalty-cup
           cp -R chicken-road/dist/. pages-bundle/chicken-road/
           cp -R chicken-crash/dist/. pages-bundle/chicken-crash/
           cp -R chicken-road-unfinished/dist/. pages-bundle/chicken-road-unfinished/
           cp -R chicken-pilot/dist/. pages-bundle/chicken-pilot/
+          cp -R penalty-cup/dist/. pages-bundle/penalty-cup/
           cp pages-index.html pages-bundle/index.html
 
       - name: Configure Pages

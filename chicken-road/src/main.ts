@@ -1,5 +1,6 @@
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, Text, TextStyle, Texture } from 'pixi.js';
 import './style.css';
+import { assetUrl } from './publicPath';
 
 type ButtonObserver = (event: MouseEvent) => void;
 type Unsubscribe = () => void;
@@ -138,22 +139,22 @@ const AUTO_ADVANCE_DELAY_MS = 260;
 const REVIVE_DELAY_MS = 1200;
 const BANK_STORAGE_KEY = 'chicken-road-banked-winnings';
 const CHICKEN_ASSET_URLS: Record<ChickenAnimationState, string> = {
-  idle: `${import.meta.env.BASE_URL}assets/chicken-idle.png`,
-  go: `${import.meta.env.BASE_URL}assets/chicken-go.png`,
-  jump: `${import.meta.env.BASE_URL}assets/chicken-jump.png`,
-  dead: `${import.meta.env.BASE_URL}assets/chicken-dead.png`,
+  idle: assetUrl('chicken-idle.png'),
+  go: assetUrl('chicken-go.png'),
+  jump: assetUrl('chicken-jump.png'),
+  dead: assetUrl('chicken-dead.png'),
 };
 const AUDIO_URLS: Record<SoundKey, string> = {
-  click: `${import.meta.env.BASE_URL}assets/audio/button-click.webm`,
-  lose: `${import.meta.env.BASE_URL}assets/audio/lose.webm`,
-  step: `${import.meta.env.BASE_URL}assets/audio/step.webm`,
-  win: `${import.meta.env.BASE_URL}assets/audio/win.webm`,
+  click: assetUrl('audio/button-click.webm'),
+  lose: assetUrl('audio/lose.webm'),
+  step: assetUrl('audio/step.webm'),
+  win: assetUrl('audio/win.webm'),
 };
-const OBJECTS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/objects.png`;
-const LOGO_URL = `${import.meta.env.BASE_URL}assets/logo.png`;
-const DECORS_SPRITE_URL = `${import.meta.env.BASE_URL}assets/decors.png`;
-const MINI_FIRE_SPRITE_URL = `${import.meta.env.BASE_URL}assets/mini-fire.png`;
-const BURN_FIRE_FRAME_URLS = Array.from({ length: 6 }, (_, index) => `${import.meta.env.BASE_URL}assets/fire-burn-${index + 1}.png`);
+const OBJECTS_SPRITE_URL = assetUrl('objects.png');
+const LOGO_URL = assetUrl('logo.png');
+const DECORS_SPRITE_URL = assetUrl('decors.png');
+const MINI_FIRE_SPRITE_URL = assetUrl('mini-fire.png');
+const BURN_FIRE_FRAME_URLS = Array.from({ length: 6 }, (_, index) => assetUrl(`fire-burn-${index + 1}.png`));
 const CHICKEN_SPRITE_SCALE = 0.72;
 const CHICKEN_DEAD_SCALE = 0.5;
 const CHICKEN_CELL = 302;

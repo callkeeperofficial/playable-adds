@@ -147,6 +147,8 @@ api.hideGame();
 - Observer callbacks receive the original `MouseEvent`.
 - If a callback throws, the game rethrows that error asynchronously so other
   registered callbacks can still run.
-- During normal bonus completion, the same final win overlay appears with a
-  continue hint. `hideFinalWinScreen()` only closes preview overlays opened
-  through `showFinalWinScreen()`, not the in-game bonus result screen.
+- During normal gameplay wins, the final win overlay is blocking: taps outside
+  the CTA buttons do nothing. The player exits only through **Install** or
+  **Play Market** (host observers) or when the host calls `hideGame()`.
+- `hideFinalWinScreen()` closes only preview overlays opened through
+  `showFinalWinScreen()`, not in-game win screens reached through normal play.

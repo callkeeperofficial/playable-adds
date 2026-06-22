@@ -110,6 +110,7 @@ https://callkeeperofficial.github.io/playable-adds/chicken-road/
 https://callkeeperofficial.github.io/playable-adds/chicken-crash/
 https://callkeeperofficial.github.io/playable-adds/chicken-road-unfinished/
 https://callkeeperofficial.github.io/playable-adds/chicken-pilot/
+https://callkeeperofficial.github.io/playable-adds/penalty-cup/
 ```
 
 The repository root may contain a simple index with links to every playable:
@@ -146,6 +147,9 @@ pages-bundle/
     index.html
     assets/
   chicken-pilot/
+    index.html
+    assets/
+  penalty-cup/
     index.html
     assets/
 ```
@@ -188,6 +192,7 @@ https://callkeeperofficial.github.io/playable-adds/chicken-road/
 https://callkeeperofficial.github.io/playable-adds/chicken-crash/
 https://callkeeperofficial.github.io/playable-adds/chicken-road-unfinished/
 https://callkeeperofficial.github.io/playable-adds/chicken-pilot/
+https://callkeeperofficial.github.io/playable-adds/penalty-cup/
 ```
 
 - The root Pages index URL:

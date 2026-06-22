@@ -4,7 +4,7 @@ import { WinOverlay } from '../components/WinOverlay';
 import { GameUi } from '../ui/GameUi';
 import { sleep } from '../ui/primitives';
 import { BETS, BONUS_CONFIG, DESIGN_HEIGHT, DESIGN_WIDTH, MULTIPLIERS, SAVE_CHANCE } from './config';
-import { GOAL_LAYOUT } from './layout';
+import { GOAL_LAYOUT, SCENE_LAYOUT } from './layout';
 import type { BonusMode, Difficulty, GameState } from './types';
 import { CLAIMS_FOR_BIG_WIN, GOALS_FOR_TIER_WIN, resolveWinScreen, winScreenForDifficulty, type WinScreen } from './winConfig';
 
@@ -78,8 +78,8 @@ export class GoalJackpot {
 
   private buildScene(): void {
     this.background = Spine.from({ skeleton: 'backgroundData', atlas: 'backgroundAtlas' });
-    this.background.scale.set(0.255);
-    this.background.position.set(195, 359);
+    this.background.scale.set(SCENE_LAYOUT.background.scale);
+    this.background.position.set(SCENE_LAYOUT.background.x, SCENE_LAYOUT.background.y);
     this.background.state.setAnimation(0, 'background', true);
 
     this.gates = Spine.from({ skeleton: 'gatesData', atlas: 'gatesAtlas' });
@@ -194,7 +194,6 @@ export class GoalJackpot {
         this.presentFinalWinScreen(
           amount,
           amount / bet,
-          () => this.resumeAfterGameplayWin(),
           winScreenForDifficulty(this.difficulty),
         );
         return;
@@ -234,10 +233,7 @@ export class GoalJackpot {
     this.roundPaid = false;
     this.syncUi();
     if (this.claimCount >= CLAIMS_FOR_BIG_WIN) {
-      this.presentFinalWinScreen(amount, undefined, () => {
-        this.claimCount = 0;
-        this.resumeAfterGameplayWin();
-      }, 1);
+      this.presentFinalWinScreen(amount, undefined, 1);
       return;
     }
     this.state = 'idle_before_kick';
@@ -290,25 +286,7 @@ export class GoalJackpot {
     this.balance += amount;
     this.lastWin = amount;
     this.syncUi();
-    this.presentFinalWinScreen(amount, amount / bet, () => {
-      this.bonus = null;
-      this.claimCount = 0;
-      this.resumeAfterGameplayWin();
-    }, winScreenForDifficulty(this.bonus.difficulty));
-  }
-
-  private resumeAfterGameplayWin(): void {
-    this.effectLayer.removeChildren();
-    this.app.canvas.style.pointerEvents = 'auto';
-    this.ui.hideFinalWinScreen();
-    this.finalWinVisible = false;
-    this.finalWinPreview = false;
-    this.currentStep = 0;
-    this.roundPaid = false;
-    this.state = 'idle_before_kick';
-    this.background.state.setAnimation(0, 'background', true);
-    this.resetActors();
-    this.syncUi();
+    this.presentFinalWinScreen(amount, amount / bet, winScreenForDifficulty(this.bonus.difficulty));
   }
 
   bindPublicApiCallbacks(onInstallClick: (event: MouseEvent) => void, onPlayMarketClick: (event: MouseEvent) => void): void {
@@ -342,7 +320,7 @@ export class GoalJackpot {
 
   showFinalWinScreen(prize = 42.12, screen?: number): void {
     if (!this.gameVisible) this.showGame();
-    this.presentFinalWinScreen(Number(prize.toFixed(2)), undefined, undefined, resolveWinScreen(screen));
+    this.presentFinalWinScreen(Number(prize.toFixed(2)), undefined, resolveWinScreen(screen), true);
   }
 
   hideFinalWinScreen(): void {
@@ -352,11 +330,11 @@ export class GoalJackpot {
   private presentFinalWinScreen(
     amount: number,
     multiplier: number | undefined,
-    onContinue?: () => void,
     screen?: WinScreen,
+    preview = false,
   ): void {
     this.finalWinVisible = true;
-    this.finalWinPreview = !onContinue;
+    this.finalWinPreview = preview;
     this.state = 'bonus_result';
     this.syncUi();
     this.effectLayer.removeChildren();
@@ -365,8 +343,7 @@ export class GoalJackpot {
     this.effectLayer.addChild(visual);
     const winScreen = screen ?? 4;
     visual.show(winScreen);
-    const dismiss = onContinue ?? (() => this.dismissFinalWinScreen(true));
-    this.ui.showFinalWinScreen(amount, multiplier, dismiss, winScreen);
+    this.ui.showFinalWinScreen(amount, multiplier, winScreen);
   }
 
   private dismissFinalWinScreen(onlyWhenPreview: boolean): void {

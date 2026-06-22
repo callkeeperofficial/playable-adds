@@ -1,0 +1,19 @@
+{
+  "name": "penalty-cup",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@esotericsoftware/spine-pixi-v8": "4.2.83",
+    "pixi.js": "^8.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2",
+    "vite": "^8.0.14"
+  }
+}

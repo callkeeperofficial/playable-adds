@@ -14,6 +14,7 @@ Current playable projects:
 - `chicken-crash/`
 - `chicken-road-unfinished/`
 - `chicken-pilot/`
+- `penalty-cup/`
 
 When adding another playable, create a new top-level directory rather than
 replacing or folding it into an existing game.
@@ -39,6 +40,9 @@ workflow may be updated when they are needed to register or publish a playable.
 - Keep game-specific source assets and visual references inside the owning game
   directory.
 - Read the local `<game>/AGENTS.md` before implementing or changing a game.
+- Every playable that embeds in a host page must expose the standard browser
+  API described in [`PUBLIC_API.md`](PUBLIC_API.md). Put game-specific API
+  details in `<game>/PUBLIC_API.md`.
 - Run the production build for the affected playable before considering work
   complete.
 - For any visual, layout, canvas, interaction, or gameplay change, verify the
@@ -76,6 +80,7 @@ Reserved local ports:
 - `chicken-crash`: `http://localhost:5174/`
 - `chicken-road-unfinished`: `http://localhost:5175/`
 - `chicken-pilot`: `http://localhost:5176/`
+- `penalty-cup`: `http://localhost:5177/`
 
 Example for Chicken Crash:
 

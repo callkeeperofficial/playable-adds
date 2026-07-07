@@ -1,5 +1,5 @@
 import { Difficulty, STAKES, Stake } from './config';
-import { publicPath } from './publicPath';
+import { assetUrl } from './publicPath';
 
 export type UiState = {
   active: boolean;
@@ -99,7 +99,7 @@ export class GameUi {
     if (this.shellReady) return;
     this.root.innerHTML = `
       <header class="topbar">
-        <img class="logo" src="${publicPath}assets/logo.png" alt="Chicken Crash" />
+        <img class="logo" src="${assetUrl('logo.png')}" alt="Chicken Crash" />
         <div class="header-actions">
           <button class="top-action how">ⓘ&nbsp; How to play?</button>
           <div class="pool"><b></b> <span>$</span></div>
@@ -140,7 +140,7 @@ export class GameUi {
         <section
           class="final-win-overlay"
           aria-label="Win install prompt"
-          style="--win-bg: url('${publicPath}assets/win-notification.png'); --win-bg-mobile: url('${publicPath}assets/win-notification-mobile.png')"
+          style="--win-bg: url('${assetUrl('win-notification.png')}'); --win-bg-mobile: url('${assetUrl('win-notification-mobile.png')}')"
         >
           <div class="final-win-badge">
             <h1 class="final-win-title">YOU WON</h1>

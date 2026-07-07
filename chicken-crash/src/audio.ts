@@ -1,4 +1,4 @@
-import { publicPath } from './publicPath';
+import { assetUrl } from './publicPath';
 
 type Sound = 'car' | 'cashout' | 'chick' | 'jump' | 'lose' | 'win';
 
@@ -19,7 +19,7 @@ function loadSound(sound: Sound) {
   if (cached) return cached;
   const context = getAudioContext();
   if (!context) return Promise.reject(new Error('Web Audio is not available'));
-  const request = fetch(`${publicPath}assets/audio/${sound}.webm`, { cache: 'force-cache' })
+  const request = fetch(assetUrl(`audio/${sound}.webm`), { cache: 'force-cache' })
     .then((response) => {
       if (!response.ok) throw new Error(`Failed to load sound: ${sound}`);
       return response.arrayBuffer();
